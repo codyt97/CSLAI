@@ -1,0 +1,46 @@
+{
+  "routeOrigins": {
+    "AUSTIN": "CRST Hutchins, TX",
+    "ALLENTOWN": "ThermoKing Indianapolis, IN",
+    "BIRMINGHAM": "CRST Hutchins, TX",
+    "BUFFALO": "ThermoKing Indianapolis, IN",
+    "BOISE": "CRST Hutchins, TX",
+    "CHATTANOOGA": "ThermoKing Indianapolis, IN",
+    "BROWNSVILLE": "CRST Hutchins, TX",
+    "DAVENPORT": "ThermoKing Indianapolis, IN",
+    "DECATUR": "CRST Hutchins, TX",
+    "EAST PROVIDENCE": "ThermoKing Indianapolis, IN",
+    "EL PASO": "CRST Hutchins, TX",
+    "GASTONIA": "ThermoKing Indianapolis, IN",
+    "HENDERSON": "CRST Hutchins, TX",
+    "GREENSBORO": "ThermoKing Indianapolis, IN",
+    "LUBBOCK": "CRST Hutchins, TX",
+    "MIAMI": "ThermoKing Indianapolis, IN",
+    "MUSTANG": "CRST Hutchins, TX",
+    "OMAHA": "ThermoKing Indianapolis, IN",
+    "RENO": "CRST Hutchins, TX",
+    "PHILLY": "ThermoKing Indianapolis, IN",
+    "TALLAHASSEE": "CRST Hutchins, TX",
+    "ROCKFORD": "ThermoKing Indianapolis, IN",
+    "TAMPA": "CRST Hutchins, TX",
+    "SAGINAW": "ThermoKing Indianapolis, IN",
+    "TUCSON": "CRST Hutchins, TX",
+    "SPARTANBURG": "ThermoKing Indianapolis, IN",
+    "WEBSTER": "CRST Hutchins, TX",
+    "YUMA": "CRST Hutchins, TX"
+  },
+  "originDetails": {
+    "CRST Hutchins, TX": {
+      "name": "CRST Hutchins, TX",
+      "address": "1096 S Interstate 45 Service Rd, Hutchins, TX 75141",
+      "lat": 32.6505,
+      "lng": -96.7707
+    },
+    "ThermoKing Indianapolis, IN": {
+      "name": "ThermoKing Indianapolis, IN",
+      "address": "817 S Tibbs Ave, Indianapolis, IN 46241",
+      "lat": 39.7576,
+      "lng": -86.2161
+    }
+  }
+}

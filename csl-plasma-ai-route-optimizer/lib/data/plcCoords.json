@@ -1,0 +1,12 @@
+{
+  "Dallas PLC": {
+    "lat": 32.7767,
+    "lng": -96.797,
+    "note": "Approximate Dallas, TX coordinate; replace with warehouse coordinate if available."
+  },
+  "Whitestown PLC": {
+    "lat": 39.9973,
+    "lng": -86.3458,
+    "note": "Approximate Whitestown, IN coordinate; replace with warehouse coordinate if available."
+  }
+}
