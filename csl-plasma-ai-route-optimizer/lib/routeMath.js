@@ -4,7 +4,7 @@ import plcCoordsRaw from './data/plcCoords.json' assert { type: 'json' };
 import routeOriginPayload from './data/routeOrigins.json' assert { type: 'json' };
 
 export const ASSUMPTIONS = {
-  deadheadCharged: false,
+  deadheadCharged: false, 
   chargeStartsAt: 'first pickup',
   collectionTrailer: '48 ft specialized refrigerated trailer',
   shuttleTrailer: '53 ft trailer for Kankakee/facility-to-facility shuttle only',
