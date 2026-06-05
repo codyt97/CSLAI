@@ -23,21 +23,6 @@ DEFAULT_AVERAGE_TRUCK_SPEED_MPH=55
 4. Deploy.
 5. Open the Vercel URL. The site loads `public/network-map.html` inside the Next.js app and the AI buttons call `/api/ai-route-optimizer`.
 
-## Data source audit
-
-The presentation is backed by generated JSON in `lib/data/*.json` and the embedded `DATA` payload in `public/network-map.html`. The uploaded source workbooks are:
-
-- `Combined_RFQ_All_Data_fixed_with_mckesson_routes.xlsx`
-- `McKesson_Storage_KPI_Analysis_Dec_Mar.xlsx`
-
-After refreshing any workbook-derived JSON, run:
-
-```bash
-python3 scripts/audit_presentation_data.py
-```
-
-The audit confirms the public presentation payload matches the generated data files, validates record/stat counts, and reports whether the two workbook files are present in the checkout for a full source-data refresh.
-
 ## Important calculation rules
 
 - Plasma centers are stops inside route groups, not individual shipments.
