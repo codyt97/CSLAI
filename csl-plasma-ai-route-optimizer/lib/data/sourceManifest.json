@@ -1,0 +1,22 @@
+{
+  "sourceWorkbooks": [
+    {
+      "fileName": "Combined_RFQ_All_Data_fixed_with_mckesson_routes.xlsx",
+      "expectedLocation": "csl-plasma-ai-route-optimizer/Combined_RFQ_All_Data_fixed_with_mckesson_routes.xlsx",
+      "presentationData": ["lib/data/records.json", "lib/data/rateTable.json", "lib/data/plcCoords.json", "lib/data/stats.json"],
+      "purpose": "Primary center, McKesson route, pickup schedule, cost, mileage, case, pallet, PLC, coordinate, and rate-table source for the route/network presentation."
+    },
+    {
+      "fileName": "McKesson_Storage_KPI_Analysis_Dec_Mar.xlsx",
+      "expectedLocation": "csl-plasma-ai-route-optimizer/McKesson_Storage_KPI_Analysis_Dec_Mar.xlsx",
+      "presentationData": ["lib/data/records.json", "lib/data/stats.json"],
+      "purpose": "Storage KPI reference workbook used to validate storage-related KPI context where those metrics are presented."
+    }
+  ],
+  "embeddedPresentation": "public/network-map.html DATA constant",
+  "auditScript": "scripts/audit_presentation_data.py",
+  "notes": [
+    "The browser presentation is intentionally backed by generated JSON, not direct workbook formulas at runtime.",
+    "Run the audit script after refreshing generated JSON from the two uploaded workbooks to verify the presentation payload matches the data files."
+  ]
+}
