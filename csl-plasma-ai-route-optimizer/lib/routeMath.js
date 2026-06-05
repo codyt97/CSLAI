@@ -73,15 +73,18 @@ export function summarizeRouteGroup(routeName, stops) {
   const routeType = mostCommon(routeTypeCounts) || 'Base';
   const origin = originForRouteName(routeName);
   const cases = sum(stops.map(s => s.weeklyCases));
-  const pallets = cases / ASSUMPTIONS.casesPerPallet;
+  const routePalletEstimate = cases / ASSUMPTIONS.casesPerPallet;
+  const workbookPalletAllocation = sum(stops.map(s => s.weeklyPallets));
   const linehaul = sum(stops.map(s => s.linehaulCost));
   const fuel = sum(stops.map(s => s.fuelSurchargeDollar));
   const totalCost = sum(stops.map(s => s.totalRouteCost || s.sumBilledWeekly));
-  const miles = sum(stops.map(s => s.weeklyMiles));
+  const workbookAllocatedMiles = sum(stops.map(s => s.weeklyMiles));
+  const orderedStops = orderStopsNearestNeighbor(stops, endpointPLC);
+  const currentRoutePath = buildLegs({ stops: orderedStops, destinationPLC: endpointPLC, origin, preserveOrder: true });
   return {
     routeName,
     routeKey: cleanRouteName(routeName),
-    stops: orderStopsNearestNeighbor(stops, endpointPLC),
+    stops: orderedStops,
     stopCount: stops.length,
     currentEndpointPLC: endpointPLC,
     basePLC: mostCommon(baseCounts),
@@ -89,9 +92,14 @@ export function summarizeRouteGroup(routeName, stops) {
     routeType,
     origin,
     weeklyCases: round(cases, 2),
-    weeklyPallets: round(pallets, 2),
+    routePalletEstimate: round(routePalletEstimate, 2),
+    weeklyPallets: round(routePalletEstimate, 2),
+    workbookPalletAllocation: round(workbookPalletAllocation, 2),
+    palletCalculationBasis: `Route pallet estimate = total route cases / ${ASSUMPTIONS.casesPerPallet} cases per pallet`,
     weeklyLiters: round(sum(stops.map(s => s.weeklyLiters)), 2),
-    workbookMiles: round(miles, 2),
+    workbookAllocatedMiles: round(workbookAllocatedMiles, 2),
+    currentRoutePath,
+    workbookMiles: currentRoutePath.chargeableMiles,
     workbookLinehaul: round(linehaul, 2),
     workbookFuel: round(fuel, 2),
     workbookTotalCost: round(totalCost, 2),
@@ -100,7 +108,7 @@ export function summarizeRouteGroup(routeName, stops) {
     pickupDays: unique(stops.map(firstPickupDay).filter(Boolean)),
     isRelay: stops.some(s => String(s.routeType).toLowerCase() === 'relay' || s.plcChanged),
     plcMismatch: stops.some(s => s.basePLC !== s.actualPLC && s.basePLC !== '#N/A' && s.actualPLC !== '#N/A'),
-    palletWarning: pallets > ASSUMPTIONS.palletWarningThreshold
+    palletWarning: routePalletEstimate > ASSUMPTIONS.palletWarningThreshold
   };
 }
 function countBy(arr) { const o = {}; for (const v of arr) o[v || ''] = (o[v || ''] || 0) + 1; return o; }
@@ -129,8 +137,8 @@ export function orderStopsNearestNeighbor(stops, endpointPLC) {
   }
   return ordered;
 }
-export function buildLegs({ stops, destinationPLC, origin = null, roadFactor = 1.18 }) {
-  const ordered = orderStopsNearestNeighbor(stops, destinationPLC);
+export function buildLegs({ stops, destinationPLC, origin = null, roadFactor = 1.18, preserveOrder = false }) {
+  const ordered = preserveOrder ? (stops || []).filter(s => s?.hasCoords && typeof s.lat === 'number' && typeof s.lng === 'number') : orderStopsNearestNeighbor(stops, destinationPLC);
   const dest = PLC_COORDS[destinationPLC];
   const legs=[];
   if (!ordered.length || !dest) return { legs, chargeableMiles: 0, deadheadMiles: 0, totalOperationalMiles: 0 };
@@ -161,13 +169,13 @@ export function calculateRateTableCost({ chargeableMiles, weeklyCases, pricingMe
   if (pricingMethod === 'simple') rateSource = 'Simple $/mile override fallback';
   const fuel = linehaul * averageFuelPct;
   const totalCost = linehaul + fuel;
-  const pallets = weeklyCases / ASSUMPTIONS.casesPerPallet;
+  const routePalletEstimate = weeklyCases / ASSUMPTIONS.casesPerPallet;
   const driverHours = chargeableMiles / ASSUMPTIONS.defaultSpeedMph;
   return {
     linehaul: round(linehaul,2), fuel: round(fuel,2), totalCost: round(totalCost,2),
-    fuelPct: round(averageFuelPct*100,2), pallets: round(pallets,2), casesPerPallet: ASSUMPTIONS.casesPerPallet,
+    fuelPct: round(averageFuelPct*100,2), pallets: round(routePalletEstimate,2), routePalletEstimate: round(routePalletEstimate,2), casesPerPallet: ASSUMPTIONS.casesPerPallet, palletCalculationBasis: `Route pallet estimate = total route cases / ${ASSUMPTIONS.casesPerPallet} cases per pallet`,
     trailer: ASSUMPTIONS.collectionTrailer,
-    over18PalletWarning: pallets > ASSUMPTIONS.palletWarningThreshold,
+    over18PalletWarning: routePalletEstimate > ASSUMPTIONS.palletWarningThreshold,
     driverHours: round(driverHours,2), over11HourDriverWarning: driverHours > ASSUMPTIONS.driverHourLimit,
     rateSource
   };
@@ -195,7 +203,7 @@ export function compareScenario({ routeGroup, proposedPLC, roadFactor = 1.18 }) 
   return {
     current: currentCost,
     proposed: { ...proposed, ...proposedCost, endpointPLC: proposedPLC },
-    savings: { weeklyMilesSaved: round((currentCost.chargeableMiles || 0) - proposed.chargeableMiles, 2), weeklyCostSaved: weeklySavings, annualCostSaved: round(weeklySavings*52, 2) }
+    savings: { weeklyMilesSaved: round((currentCost.chargeableMiles || 0) - proposed.chargeableMiles, 2), weeklyCostSaved: weeklySavings, annualCostSaved: null, annualSavingsDisabled: true, annualSavingsNote: 'Annual savings disabled until current route mileage baseline is validated from ordered chargeable route paths.' }
   };
 }
 export function generateDeterministicCandidates({ scope='all', routeName='', objective='savings', maxRoutes=12, roadFactor=1.18 } = {}) {
@@ -223,12 +231,13 @@ export function generateDeterministicCandidates({ scope='all', routeName='', obj
         currentCost: cmp.current.totalCost,
         newCost: cmp.proposed.totalCost,
         weeklySavings: cmp.savings.weeklyCostSaved,
-        annualSavings: cmp.savings.annualCostSaved,
+        annualSavings: null,
+        annualSavingsDisabled: true,
         weeklyMilesSaved: cmp.savings.weeklyMilesSaved,
         reason: `Route-level comparison for ${g.routeName}; deadhead excluded from cost; chargeable miles start at first pickup and end at ${plc}.`,
         risks: validationRisks(g, cmp.proposed),
         confidence: 'Medium',
-        calculationBasis: 'Fallback road-mile estimate unless actual Geoapify route loaded by calculate-route API',
+        calculationBasis: 'Current baseline uses ordered route path miles (first pickup through final PLC); deadhead is shown separately and excluded. Fallback road-mile estimate unless actual Geoapify route loaded by calculate-route API.',
         routeGroup: g
       });
     }

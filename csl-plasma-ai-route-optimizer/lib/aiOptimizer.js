@@ -20,9 +20,9 @@ const SCHEMA = {
         }, required: ['id','name','centerNumber','city','state','currentRoute','proposedStop'] } },
         currentChargeableMiles: { type: 'number' }, newChargeableMiles: { type: 'number' }, weeklyMilesSaved: { type: 'number' },
         currentFuel: { type: 'number' }, newFuel: { type: 'number' }, currentCost: { type: 'number' }, newCost: { type: 'number' },
-        weeklySavings: { type: 'number' }, annualSavings: { type: 'number' }, reason: { type: 'string' }, risks: { type: 'array', items: { type: 'string' } }, confidence: { type: 'string' }
+        weeklySavings: { type: 'number' }, annualSavings: { type: ['number','null'] }, annualSavingsDisabled: { type: 'boolean' }, reason: { type: 'string' }, risks: { type: 'array', items: { type: 'string' } }, confidence: { type: 'string' }
       },
-      required: ['recommendationType','currentRoutesImpacted','newRouteName','newPLC','stops','currentChargeableMiles','newChargeableMiles','weeklyMilesSaved','currentFuel','newFuel','currentCost','newCost','weeklySavings','annualSavings','reason','risks','confidence']
+      required: ['recommendationType','currentRoutesImpacted','newRouteName','newPLC','stops','currentChargeableMiles','newChargeableMiles','weeklyMilesSaved','currentFuel','newFuel','currentCost','newCost','weeklySavings','annualSavings','annualSavingsDisabled','reason','risks','confidence']
     }},
     questionsForMcKesson: { type: 'array', items: { type: 'string' } }
   },
@@ -48,13 +48,14 @@ export async function runAiRouteOptimizer(input) {
       'Deadhead from truck origin to first pickup is not charged.',
       'Chargeable miles start at first pickup and end at destination PLC.',
       'Collection center routes use 48 ft refrigerated trailers only.',
-      'Use 70 cases per pallet.',
+      'Route pallet estimate = total route cases / 70 cases per pallet; do not mix workbook weeklyPallets into route optimization.',
       'Flag >18 pallets and >11 driver hours as validation warnings.',
-      'Do not claim savings unless current full route group is compared to proposed full route group.'
+      'Do not claim savings unless current full route group is compared to proposed full route group.',
+      'Annual savings are disabled until current route mileage baselines are validated.'
     ],
     routeGroups: groups.map(g => ({
       routeName: g.routeName, stopCount: g.stopCount, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType,
-      weeklyCases: g.weeklyCases, weeklyPallets: g.weeklyPallets, workbookMiles: g.workbookMiles,
+      weeklyCases: g.weeklyCases, routePalletEstimate: g.routePalletEstimate, palletCalculationBasis: g.palletCalculationBasis, currentRoutePathMiles: g.workbookMiles, workbookAllocatedMiles: g.workbookAllocatedMiles,
       workbookFuel: g.workbookFuel, workbookTotalCost: g.workbookTotalCost, isRelay: g.isRelay, pickupDays: g.pickupDays,
       stops: g.stops.map((s,i)=>({ stop:i+1, id:s.id, name:s.routeName, centerNumber:s.centerNumber, city:s.city, state:s.state, basePLC:s.basePLC, actualPLC:s.actualPLC }))
     })),
@@ -82,9 +83,9 @@ export async function runAiRouteOptimizer(input) {
 
 function fallbackResult({ scope, candidates, reason }) {
   return {
-    summary: 'Route optimization candidates generated from Excel-derived data and route calculator.',
+    summary: 'Route optimization candidates generated from Excel-derived data and route calculator. Annual savings are disabled pending current route-mile validation.',
     scope,
-    dataSource: 'Embedded Excel-derived route data + Rate Table assumptions + deterministic route calculator',
+    dataSource: 'Embedded Excel-derived route data + Rate Table assumptions + deterministic route calculator; current miles use ordered chargeable route path, not summed stop allocations',
     calculationStatus: reason,
     confidence: 'Medium',
     recommendations: candidates.slice(0, 8).map(c => ({
@@ -101,7 +102,8 @@ function fallbackResult({ scope, candidates, reason }) {
       currentCost: Number(c.currentCost || 0),
       newCost: Number(c.newCost || 0),
       weeklySavings: Number(c.weeklySavings || 0),
-      annualSavings: Number(c.annualSavings || 0),
+      annualSavings: null,
+      annualSavingsDisabled: true,
       reason: c.reason,
       risks: c.risks || [],
       confidence: c.confidence || 'Medium'
