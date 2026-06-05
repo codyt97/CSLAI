@@ -347,7 +347,7 @@ body.optimization-active aside{padding-bottom:34px;}
         <ul>
           <li><b>Current baseline miles</b> are calculated once per route group from ordered chargeable route path miles: first pickup → next pickup(s) → final PLC. Stop-level workbook mile allocations remain for center allocation views only.</li>
           <li><b>Recommended PLC</b> is calculated from closest PLC distance unless the route is flagged as not serviced by McKesson.</li>
-          <li><b>Annual savings</b> are disabled until current route-mile baselines are fully validated; weekly cost comparisons remain planning-only.</li>
+          <li><b>Savings labels</b> appear only when proposed total contract cost is lower than current total contract cost; annual savings = positive weekly savings × 52.</li>
           <li><b>Relay validation</b> flags Allentown, Buffalo, and Philly where Base PLC and Actual PLC differ.</li>
         </ul>
       </div>
@@ -368,7 +368,7 @@ body.optimization-active aside{padding-bottom:34px;}
         </div>
         <div class="row2">
           <div><label for="optRecommendedPlcFilter">Proposed Endpoint PLC</label><select id="optRecommendedPlcFilter"></select></div>
-          <div><label for="optMinAnnualSavings">Annual Savings</label><input id="optMinAnnualSavings" type="text" value="Disabled until current route miles are validated" disabled /></div>
+          <div><label for="optMinAnnualSavings">Min Annual Savings</label><input id="optMinAnnualSavings" type="number" value="0" min="0" step="1000" /></div>
         </div>
         <div class="row2">
           <div><label for="optShowMode">Map Display</label><select id="optShowMode"><option value="candidates">Route Rebuild Recommendations</option><option value="routes">Route Summary</option><option value="sequence">Stop Sequence</option></select></div>
@@ -1689,7 +1689,7 @@ function chooseOptimizationOption(base, options){
     if(objective === 'fuel') score = fuelSavings;
     if(objective === 'relay') score = (base.isRelay ? 1000000 : 0) + weeklySavings;
     if(objective === 'costcase') score = (base.cases ? base.currentTotal/base.cases : 0) * 1000 + weeklySavings;
-    return {...o, weeklySavings, annualSavings:null, annualSavingsDisabled:true, milesSaved, fuelSavings, score};
+    return {...o, weeklySavings, annualSavings: weeklySavings > 0 ? weeklySavings*52 : 0, milesSaved, fuelSavings, score};
   });
   scored.sort((a,b)=>b.score-a.score);
   return scored[0] || null;
@@ -1748,7 +1748,7 @@ function filteredOptimizationRows(){
   const route = $('optRouteFilter')?.value || '';
   const currentPLC = $('optCurrentPlcFilter')?.value || '';
   const recPLC = $('optRecommendedPlcFilter')?.value || '';
-  const minAnnual = 0; // Annual savings are disabled while current route-mile baselines are validated.
+  const minAnnual = Number($('optMinAnnualSavings')?.value || 0);
   const objective = $('optObjectiveFilter')?.value || 'savings';
   const relayOnly = $('optRelayOnly')?.checked;
   const hideNoSavings = $('optHideNoSavings')?.checked;
@@ -1795,7 +1795,7 @@ function renderRouteOptimizationKpiReport(rows){
     kpiFormulaRow('Estimated weekly fuel savings', 'SUM(MAX(currentFuel - proposedFuel, 0))', 'fuelSurchargeDollar, proposed fuel', fuelSavings, fuelSavings, money2),
     kpiFormulaRow('Estimated weekly total savings', 'SUM(MAX(currentTotal - proposedTotal, 0))', 'totalRouteCost, proposed total', weeklySavings, weeklySavings, money2)
   ].join('');
-  box.innerHTML = `<b>Workbook KPI reconciliation — Route Optimization</b><br/><span class="muted">Annual savings are intentionally disabled. Route pallets use route cases ÷ 70 for optimization; workbook weeklyPallets remain center allocation data.</span>
+  box.innerHTML = `<b>Workbook KPI reconciliation — Route Optimization</b><br/><span class="muted">Savings labels require proposed total contract cost to be lower than current total contract cost. Route pallets use route cases ÷ 70 for optimization; workbook weeklyPallets remain center allocation data.</span>
     <table style="margin-top:8px"><thead><tr><th>KPI</th><th>Formula</th><th>Workbook columns used</th><th>Website value</th><th>Workbook calculated value</th><th>Status</th></tr></thead><tbody>${formulaRows}</tbody></table>
     <div style="margin-top:8px"><b>Discrepancy report</b></div>
     <table><thead><tr><th>Category</th><th>Difference</th><th>Status</th></tr></thead><tbody><tr><td>Mileage differences</td><td class="num">0.0</td><td>No discrepancy in visible route KPI calculation</td></tr><tr><td>Fuel differences</td><td class="num">$0.00</td><td>No discrepancy in visible route KPI calculation</td></tr><tr><td>Pallet differences</td><td class="num">0.0</td><td>No discrepancy in visible route KPI calculation</td></tr><tr><td>Route count differences</td><td class="num">0</td><td>No discrepancy in visible route KPI calculation</td></tr><tr><td>Stop count differences</td><td class="num">0</td><td>No discrepancy in visible route KPI calculation</td></tr><tr><td>Storage KPI differences</td><td class="num">$0.00</td><td>No discrepancy in visible route KPI calculation</td></tr></tbody></table>`;
@@ -1818,7 +1818,7 @@ function updateOptimizationKpis(rows){
   $('kpiPallets').textContent = fmt1(pallets);
   $('kpiMiles').textContent = fmt0(milesSaved);
   $('kpiCost').textContent = money2(weeklyFuelSaved).replace('.00','');
-  $('kpiCostCase').textContent = 'Annual disabled';
+  $('kpiCostCase').textContent = money2(rows.reduce((a,r)=>a+Math.max(0,r.annualSavings||0),0)).replace('.00','');
   renderRouteOptimizationKpiReport(rows);
 }
 function updateOptimizationTable(rows, mode){
@@ -1826,9 +1826,9 @@ function updateOptimizationTable(rows, mode){
   if(mode === 'sequence'){
     table.innerHTML = `<thead><tr><th>Route</th><th>Recommended Design</th><th>New Route Name(s)</th><th>Current Endpoint PLC(s)</th><th>Proposed Endpoint PLC(s)</th><th>Stops</th><th>Workbook Current Miles</th><th>Proposed Route Miles</th><th>Estimated Mile Reduction</th><th>Suggested Stop Order</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.recommendationType}</td><td>${r.newRouteText}</td><td>${r.currentPLCText}</td><td>${r.recommendedPLCText}</td><td>${fmt0(r.stopCount)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td><b>${fmtMiles(Math.max(0,r.milesSaved))}</b></td><td>${r.stopOrderText || 'No coordinate sequence available'}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="11">No matching route sequence opportunities.</td></tr>'}</tbody>`;
   } else if(mode === 'routes'){
-    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Route Miles</th><th>Current Linehaul</th><th>New Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Current Total</th><th>New Total</th><th>Weekly Savings</th><th>Annual Savings Disabled</th><th>Rate Source</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(r.currentLinehaul)}</td><td>${money2(r.newLinehaul)}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>Disabled</b></td><td>${r.rateDetail}</td></tr>`).join('') || '<tr><td colspan="18">No matching route opportunities.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Route Miles</th><th>Current Linehaul</th><th>New Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Current Total</th><th>New Total</th><th>Weekly Savings</th><th>Annual Savings</th><th>Rate Source</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(r.currentLinehaul)}</td><td>${money2(r.newLinehaul)}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${r.rateDetail}</td></tr>`).join('') || '<tr><td colspan="18">No matching route opportunities.</td></tr>'}</tbody>`;
   } else {
-    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Route Miles</th><th>Miles Saved</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings Disabled</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${fmtDelta(-r.milesSaved).replace('+','')}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>Disabled</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Route Miles</th><th>Miles Saved</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${fmtDelta(-r.milesSaved).replace('+','')}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
   }
 }
 function refreshOptimization(){
@@ -1871,7 +1871,7 @@ function refreshOptimization(){
     // Route-level stop markers.
     r.stops.slice(0, 80).forEach((stop,idx)=>{
       const marker=L.marker([stop.lat,stop.lng], {icon:optimizationCandidateMarkerIcon(r), zIndexOffset:1200})
-        .bindPopup(`<div class="popup"><h3>${stop.routeName}</h3><div class="muted">${stop.city}, ${stop.state}</div><table><tr><td>Current route</td><td>${r.route}</td></tr><tr><td>Current endpoint</td><td>${endpointPLCFor(stop)}</td></tr><tr><td>Recommended route design</td><td>${r.recommendationType}</td></tr><tr><td>Proposed route name(s)</td><td>${r.newRouteText}</td></tr><tr><td>Route weekly savings</td><td>${money2(Math.max(0,r.weeklySavings))}</td></tr><tr><td>Annual savings</td><td>Disabled pending current mileage validation</td></tr><tr><td>Rate basis</td><td>${r.rateDetail}</td></tr></table><div class="mini-note">Savings shown at route level, not individual center shipment level.</div></div>`)
+        .bindPopup(`<div class="popup"><h3>${stop.routeName}</h3><div class="muted">${stop.city}, ${stop.state}</div><table><tr><td>Current route</td><td>${r.route}</td></tr><tr><td>Current endpoint</td><td>${endpointPLCFor(stop)}</td></tr><tr><td>Recommended route design</td><td>${r.recommendationType}</td></tr><tr><td>Proposed route name(s)</td><td>${r.newRouteText}</td></tr><tr><td>Route weekly savings</td><td>${money2(Math.max(0,r.weeklySavings))}</td></tr><tr><td>Annual savings</td><td>${money2(Math.max(0,r.annualSavings))}</td></tr><tr><td>Rate basis</td><td>${r.rateDetail}</td></tr></table><div class="mini-note">Savings shown at route level, not individual center shipment level.</div></div>`)
         .bindTooltip(`${r.route} · ${stop.routeName}`, {direction:'top', opacity:.85});
       centerLayer.addLayer(marker);
       bounds.push([stop.lat,stop.lng]);
@@ -1882,7 +1882,7 @@ function refreshOptimization(){
   const fuelSavings = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
   const relay = rows.filter(r=>r.isRelay).length;
-  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Estimated route-mile reduction: <b>${fmtMiles(milesSaved)}/week</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Annual savings: <b>Disabled pending current route-mile validation</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Savings are route-level weekly planning comparisons: current route path miles/cost vs proposed rebuilt route totals. Annual savings are disabled pending current mileage validation. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
+  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Estimated route-mile reduction: <b>${fmtMiles(milesSaved)}/week</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Annual savings: <b>${money2(rows.reduce((a,r)=>a+Math.max(0,r.annualSavings||0),0))}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Savings are route-level weekly planning comparisons: current route path miles/cost vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
   $('mapTitle').textContent = `Route Optimization Engine: ${mode === 'routes' ? 'Route Summary' : mode === 'sequence' ? 'Stop Sequence' : 'Route Rebuild Recommendations'}`;
   $('visiblePill').textContent = `${fmt0(rows.length)} route groups`;
   if(bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:6});
@@ -1902,7 +1902,7 @@ function exportOptimizationCsv(){
   const header=['Current Route Name','Current Endpoint PLC(s)','Recommended Route Design','Proposed Route Name(s)','States','Stops','Week Pattern','Cases Weekly','Liters Weekly','Pallets Weekly','Current Miles','New Route Miles','Miles Saved','Current Linehaul','New Linehaul','Current Fuel','New Fuel','Fuel Saved','Current Total Cost','New Total Cost','Weekly Savings','Annual Savings','Current Cost Per Case','New Cost Per Case','Rate Source','Rate Detail','Validation Note','Suggested Stop Order'];
   const lines=[header.join(',')];
   for(const r of rows){
-    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),fmt1(r.currentMiles),fmt1(r.newMiles),fmt1(r.milesSaved),fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),'Annual savings disabled',fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
+    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),fmt1(r.currentMiles),fmt1(r.newMiles),fmt1(r.milesSaved),fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
     lines.push(vals.map(v=>`"${String(v ?? '').replaceAll('"','""')}"`).join(','));
   }
   const blob=new Blob([lines.join('\n')], {type:'text/csv'});
@@ -2451,7 +2451,7 @@ if($('geoapifyApiKey')){
     for(const r of rows){
       for(const leg of routeWorkflowLegRows(r)){
         const c=leg.current, n=leg.proposed;
-        const vals=[r.route,optTrailerSize(),optTrailerPalletCapacity(),r.recommendationType,c.routeName,c.legNo,c.from,c.to,c.endpointPLC,fmt1(c.legMiles||0),fmt1(c.fuel||0),fmt1(c.linehaul||0),c.routeBasis,n.routeName,n.legNo,n.from,n.to,n.endpointPLC,fmt1(n.legMiles||0),fmt1(n.fuel||0),fmt1(n.linehaul||0),fmt1(leg.legMilesSaved),fmt1(leg.legFuelSaved),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),'Annual savings disabled',r.validationNote];
+        const vals=[r.route,optTrailerSize(),optTrailerPalletCapacity(),r.recommendationType,c.routeName,c.legNo,c.from,c.to,c.endpointPLC,fmt1(c.legMiles||0),fmt1(c.fuel||0),fmt1(c.linehaul||0),c.routeBasis,n.routeName,n.legNo,n.from,n.to,n.endpointPLC,fmt1(n.legMiles||0),fmt1(n.fuel||0),fmt1(n.linehaul||0),fmt1(leg.legMilesSaved),fmt1(leg.legFuelSaved),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),r.validationNote];
         lines.push(vals.map(v=>`"${String(v ?? '').replaceAll('"','""')}"`).join(','));
       }
     }
@@ -2686,7 +2686,7 @@ if($('geoapifyApiKey')){
       const annual = null;
       dashboard.innerHTML = `
         <div class="opt-decision-card"><h3>Portfolio view</h3><div class="opt-big-number">${fmt0(routeCount)} routes</div><div class="opt-explain">You are reviewing all visible route groups. Select one route to see the full step-by-step workflow.</div></div>
-        <div class="opt-decision-card"><h3>Annual opportunity</h3><div class="opt-big-number">Disabled</div><div class="opt-explain">Annual savings are disabled until current route-mile baselines are validated from ordered route paths.</div></div>
+        <div class="opt-decision-card"><h3>Annual opportunity</h3><div class="opt-big-number">${money2(annual).replace('.00','')}</div><div class="opt-explain">Shown only where proposed total contract cost is lower than current total contract cost.</div></div>
         <div class="opt-decision-card"><h3>Next best action</h3><span class="opt-action-badge warn">Choose one route</span><div class="opt-explain">Click a route row below or use the Route dropdown to drill into one route workflow.</div></div>`;
       return;
     }
@@ -2708,7 +2708,7 @@ if($('geoapifyApiKey')){
         <div class="opt-mini-metric">Design<b>${esc(r.recommendationType)}</b></div>
         <div class="opt-mini-metric">Proposed miles<b>${fmtMiles(r.newMiles)}</b></div>
         <div class="opt-mini-metric">New weekly cost<b>${money2(r.newTotal)}</b></div>
-        <div class="opt-mini-metric">Annual savings<b>Disabled</b></div>
+        <div class="opt-mini-metric">Annual savings<b>${money2(Math.max(0,r.annualSavings))}</b></div>
         <div class="opt-mini-metric">Fuel change<b>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</b></div>
         <div class="opt-mini-metric">Confidence<b>${confidenceText(r)}</b></div>
       </div></div>
@@ -2799,13 +2799,13 @@ if($('geoapifyApiKey')){
       return;
     }
     if(!selected && window.codyOptShowAllRoutes){
-      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Miles</th><th>Miles Saved</th><th>Weekly Savings</th><th>Annual Savings Disabled</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${fmtDelta(-r.milesSaved).replace('+','')}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>Disabled</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
+      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Current Miles</th><th>New Miles</th><th>Miles Saved</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${fmtDelta(-r.milesSaved).replace('+','')}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
       return;
     }
     const chunks = rows.map(r=>{
       const currentRows = currentWorkflowForRoute(r);
       const proposedRows = proposedWorkflowForRoute(r);
-      return `<div class="opt-route-title"><div><b>${esc(r.route)} Route Workflow</b><div class="muted">Current PLC: ${esc(r.currentPLCText)} · Proposed: ${esc(r.newRouteText)} · Stops: ${fmt0(r.stopCount)} · ${esc(optTrailerLabel())}</div></div><div><span class="badge ${r.weeklySavings>0?'badge-green':'badge-gray'}">Annual savings: Disabled</span></div></div><div class="opt-section-caption">Miles/fuel/linehaul are shown by route leg. Current cost uses workbook current route cost allocated across the current workflow legs. Proposed cost uses actual truck route miles where loaded, otherwise estimated road miles, then Excel Rate Table + fuel surcharge.</div><div class="opt-workflow-grid">${miniWorkflowTable('Current Workflow: numeric stops and legs', 'current', currentRows)}${miniWorkflowTable('Proposed Workflow: suggested route design', 'proposed', proposedRows)}</div>`;
+      return `<div class="opt-route-title"><div><b>${esc(r.route)} Route Workflow</b><div class="muted">Current PLC: ${esc(r.currentPLCText)} · Proposed: ${esc(r.newRouteText)} · Stops: ${fmt0(r.stopCount)} · ${esc(optTrailerLabel())}</div></div><div><span class="badge ${r.weeklySavings>0?'badge-green':'badge-gray'}">Annual savings: ${money2(Math.max(0,r.annualSavings))}</span></div></div><div class="opt-section-caption">Miles/fuel/linehaul are shown by route leg. Current cost uses workbook current route cost allocated across the current workflow legs. Proposed cost uses actual truck route miles where loaded, otherwise estimated road miles, then Excel Rate Table + fuel surcharge.</div><div class="opt-workflow-grid">${miniWorkflowTable('Current Workflow: numeric stops and legs', 'current', currentRows)}${miniWorkflowTable('Proposed Workflow: suggested route design', 'proposed', proposedRows)}</div>`;
     }).join('');
     table.innerHTML = `<tbody><tr><td><div class="opt-workflow-container">${chunks}</div></td></tr></tbody>`;
   };
@@ -3151,13 +3151,13 @@ if($('geoapifyApiKey')){
     }
     if(!rows.length){ table.innerHTML=`<tbody><tr><td><div class="opt-empty-state"><h2>No matching routes</h2><p>Reset filters or choose a different route. Savings are calculated only from chargeable first-pickup-to-PLC miles.</p></div></td></tr></tbody>`; return; }
     if(!selected && window.codyOptShowAllRoutes){
-      table.innerHTML=`<thead><tr><th>Route</th><th>Action</th><th>Origin</th><th>Trailer</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Calculated Pallets</th><th>Current Chargeable Miles</th><th>New Chargeable Miles</th><th>Weekly Savings</th><th>Annual Savings Disabled</th><th>Validation</th></tr></thead><tbody>${rows.map(r=>{ const v=validationWarningsForRoute(r.route,r.cases,r.newMiles); const origin=originForRoute(r.route,r.stops); return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(v.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(Math.max(0,r.weeklySavings))}</td><td><b>Disabled</b></td><td>${v.notes.length?'<span class="badge badge-amber">Review</span>':'<span class="badge badge-green">OK</span>'}</td></tr>`; }).join('')}</tbody>`;
+      table.innerHTML=`<thead><tr><th>Route</th><th>Action</th><th>Origin</th><th>Trailer</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Calculated Pallets</th><th>Current Chargeable Miles</th><th>New Chargeable Miles</th><th>Weekly Savings</th><th>Annual Savings</th><th>Validation</th></tr></thead><tbody>${rows.map(r=>{ const v=validationWarningsForRoute(r.route,r.cases,r.newMiles); const origin=originForRoute(r.route,r.stops); return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(v.pallets)}</td><td>${fmtMiles(r.currentMiles)}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(Math.max(0,r.weeklySavings))}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${v.notes.length?'<span class="badge badge-amber">Review</span>':'<span class="badge badge-green">OK</span>'}</td></tr>`; }).join('')}</tbody>`;
       return;
     }
     const chunks=rows.map(r=>{
       const currentRows=currentWorkflowRowsConfirmed(r);
       const proposedRows=proposedWorkflowRowsConfirmed(r);
-      return `<div class="opt-route-title"><div><b>${esc2(r.route)} Route Workflow</b><div class="muted">Current final PLC: ${esc2(r.currentPLCText)} · Proposed: ${esc2(r.newRouteText)} · Stops: ${fmt0(r.stopCount)} · Cost uses chargeable miles only</div></div><div><span class="badge ${r.weeklySavings>0?'badge-green':'badge-gray'}">Annual savings: Disabled</span></div></div><div class="opt-section-caption confirmed-caption">${routeValidationHtml(r)}</div><div class="opt-workflow-grid confirmed-grid">${miniWorkflowTableConfirmed('Current Workflow: origin shown, charge begins at first pickup', currentRows)}${miniWorkflowTableConfirmed('Proposed Workflow: suggested route design, chargeable miles only', proposedRows)}</div>`;
+      return `<div class="opt-route-title"><div><b>${esc2(r.route)} Route Workflow</b><div class="muted">Current final PLC: ${esc2(r.currentPLCText)} · Proposed: ${esc2(r.newRouteText)} · Stops: ${fmt0(r.stopCount)} · Cost uses chargeable miles only</div></div><div><span class="badge ${r.weeklySavings>0?'badge-green':'badge-gray'}">Annual savings: ${money2(Math.max(0,r.annualSavings))}</span></div></div><div class="opt-section-caption confirmed-caption">${routeValidationHtml(r)}</div><div class="opt-workflow-grid confirmed-grid">${miniWorkflowTableConfirmed('Current Workflow: origin shown, charge begins at first pickup', currentRows)}${miniWorkflowTableConfirmed('Proposed Workflow: suggested route design, chargeable miles only', proposedRows)}</div>`;
     }).join('');
     table.innerHTML=`<tbody><tr><td><div class="opt-workflow-container confirmed-container">${chunks}</div></td></tr></tbody>`;
   };
@@ -3171,7 +3171,7 @@ if($('geoapifyApiKey')){
       const v=validationWarningsForRoute(r.route,r.cases,r.newMiles||r.currentMiles);
       const origin=originForRoute(r.route,r.stops);
       for(const leg of all){
-        const vals=[r.route,leg.workflow,leg.step,leg.charged?'Charged':'Deadhead / Not Charged',origin?origin.name:'Unknown',`${v.trailer.size} ft - ${v.trailer.label}`,INBOUND_OUTBOUND_CASE_SIZE,K3_BASKET_SIZE,CASES_PER_PALLET,K3_BASKETS_PER_PALLET,K3_CASES_PER_PALLET,fmt1(r.cases),fmt1(v.pallets),fmt0(v.loads),leg.from,leg.to,leg.endpointPLC,fmt1(leg.miles||0),fmt1(leg.fuel||0),fmt1(leg.linehaul||0),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),'Annual savings disabled',fmt1(v.hours),v.notes.join(' '),leg.routeBasis];
+        const vals=[r.route,leg.workflow,leg.step,leg.charged?'Charged':'Deadhead / Not Charged',origin?origin.name:'Unknown',`${v.trailer.size} ft - ${v.trailer.label}`,INBOUND_OUTBOUND_CASE_SIZE,K3_BASKET_SIZE,CASES_PER_PALLET,K3_BASKETS_PER_PALLET,K3_CASES_PER_PALLET,fmt1(r.cases),fmt1(v.pallets),fmt0(v.loads),leg.from,leg.to,leg.endpointPLC,fmt1(leg.miles||0),fmt1(leg.fuel||0),fmt1(leg.linehaul||0),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(v.hours),v.notes.join(' '),leg.routeBasis];
         lines.push(vals.map(x=>`"${String(x??'').replaceAll('"','""')}"`).join(','));
       }
     }
@@ -3231,13 +3231,19 @@ refresh();
         <div class="ai-title">${idx+1}. ${htmlEscape(r.newRouteName || r.recommendationType || 'Recommendation')}</div>
         <div><b>Action:</b> ${htmlEscape(r.recommendationType || '')}</div>
         <div><b>Impacted current routes:</b> ${htmlEscape((r.currentRoutesImpacted||[]).join(', '))}</div>
-        <div><b>New PLC:</b> ${htmlEscape(r.newPLC || '')}</div>
-        <div><b>Stops:</b> ${htmlEscape((r.stops||[]).map(s => s.name || s.routeName || s.id || s).join(' → '))}</div>
-        <div><b>Miles:</b> current ${Number(r.currentChargeableMiles||0).toLocaleString()} → new ${Number(r.newChargeableMiles||0).toLocaleString()}</div>
-        <div><b>Weekly savings:</b> $${Number(r.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Annual:</b> Disabled</div>
+        <div><b>Current PLC:</b> ${htmlEscape(r.currentPLC || '')} | <b>Proposed PLC:</b> ${htmlEscape(r.proposedPLC || r.newPLC || '')}</div>
+        <div><b>Pickup day/time window:</b> ${htmlEscape(r.pickupDayTimeWindow || '')}</div>
+        <div><b>Week A / Week B:</b> ${htmlEscape(r.weekAB || '')}</div>
+        <div><b>Affected centers:</b> ${htmlEscape((r.stops||[]).map(s => `${s.name || s.routeName || s.id || s}${s.pickupDay ? ' [' + s.pickupDay + ']' : ''}`).join(' → '))}</div>
+        <div><b>Miles:</b> current ${Number(r.currentChargeableMiles||0).toLocaleString()} → proposed ${Number(r.newChargeableMiles||0).toLocaleString()}</div>
+        <div><b>Contract cost:</b> current $${Number(r.currentCost||0).toLocaleString(undefined,{maximumFractionDigits:0})} → proposed $${Number(r.newCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div><b>Weekly savings:</b> $${Number(r.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div><b>Formula:</b> ${htmlEscape(r.formulaUsed || '')}</div>
+        <div><b>Contract rule:</b> ${htmlEscape(r.contractRuleUsed || '')}</div>
+        <div><b>Schedule rule:</b> ${htmlEscape(r.scheduleRuleUsed || '')}</div>
         <div><b>Reason:</b> ${htmlEscape(r.reason || '')}</div>
         <div><b>Risks:</b> ${htmlEscape((r.risks||[]).join('; '))}</div>
-        <div><b>Confidence:</b> ${htmlEscape(r.confidence || result.confidence || '')}</div>
+        <div><b>Confidence:</b> ${htmlEscape(r.confidence || result.confidence || '')} | <b>Final status:</b> ${htmlEscape(r.finalStatus || '')}</div>
       </div>`).join('');
     setAiOutput(`
       <div class="ai-title">${htmlEscape(result.summary || 'AI Route Optimization Result')}</div>

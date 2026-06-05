@@ -18,6 +18,23 @@ export const ASSUMPTIONS = {
   defaultSpeedMph: Number(process.env.DEFAULT_AVERAGE_TRUCK_SPEED_MPH || 55)
 };
 
+
+export function contractRules() {
+  const dedicatedRate = Number(rateTable?.dedicatedRatePerMile || rateTable?.dedicatedTransportationRatePerMile || 3.34);
+  return {
+    chargeStartsAt: ASSUMPTIONS.chargeStartsAt,
+    deadheadCharged: ASSUMPTIONS.deadheadCharged,
+    fuelSurchargePct: averageFuelSurchargePct(),
+    linehaulFormula: `chargeable miles × $${dedicatedRate}/mile`,
+    fuelFormula: `linehaul × ${(averageFuelSurchargePct()*100).toFixed(2)}% fuel surcharge`,
+    trailerRule: ASSUMPTIONS.collectionTrailer,
+    palletRule: `${ASSUMPTIONS.casesPerPallet} cases = 1 pallet`,
+    minimumCharge: rateTable?.minimumChargeWeightLbs ? `${rateTable.minimumChargeWeightLbs} lb minimum charge weight` : 'No explicit minimum charge found in loaded Rate Table data',
+    accessorialRules: 'Storage, other/accessorial, detention, layover, toll, stop-charge, and special-handling costs are used only when present in the workbook/rate data; no unlisted charge is invented.',
+    source: rateTable?.sourceSheet || 'Rate Table'
+  };
+}
+
 export const PLC_COORDS = normalizePlcCoords(plcCoordsRaw);
 export const ROUTE_ORIGINS = routeOriginPayload.routeOrigins || {};
 export const ORIGIN_DETAILS = routeOriginPayload.originDetails || {};
@@ -47,6 +64,32 @@ export function firstPickupDay(r) {
   for (const d of days) if (r[d]) return d;
   return '';
 }
+
+export function scheduleForStop(r) {
+  const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  return days.map(day => ({ day, value: String(r?.[day] || r?.pickupDays?.[day] || '').trim() })).filter(x => x.value);
+}
+export function stopScheduleSummary(r) {
+  const schedule = scheduleForStop(r);
+  return {
+    pickupDay: schedule.map(x => `${x.day}:${x.value}`).join(', ') || firstPickupDay(r) || 'Not scheduled',
+    pickupTimeWindow: r.pickupHours || '',
+    weekA: r.weekPatternA || '',
+    weekB: r.weekPatternB || '',
+    currentRouteName: r.routeNameMckesson || r.mckessonRoute || '',
+    currentPLC: routeEndpointForRecord(r),
+    cases: round(r.weeklyCases, 2),
+    pallets: round((Number(r.weeklyCases)||0) / ASSUMPTIONS.casesPerPallet, 2),
+    nonCslPickupDayFlag: Boolean(r.nonCslPickupDayFlag || r.nonCSLPickupDayFlag || r.notCslPickupDay)
+  };
+}
+export function routeScheduleSummary(stops) {
+  const pickupDays = unique(stops.flatMap(s => scheduleForStop(s).map(x => `${x.day}:${x.value}`)).filter(Boolean));
+  const timeWindows = unique(stops.map(s => s.pickupHours).filter(Boolean));
+  const weekCadence = unique(stops.map(s => [s.weekPatternA ? 'A' : '', s.weekPatternB ? 'B' : ''].filter(Boolean).join('/')).filter(Boolean));
+  return { pickupDays, timeWindows, weekCadence };
+}
+
 export function groupRouteRecords({ openOnly = true } = {}) {
   const groups = new Map();
   for (const r of records) {
@@ -106,6 +149,7 @@ export function summarizeRouteGroup(routeName, stops) {
     workbookCostPerCase: cases ? round(totalCost / cases, 2) : 0,
     weekPatterns: unique(stops.map(s => [s.weekPatternA ? 'A' : '', s.weekPatternB ? 'B' : ''].filter(Boolean).join('/')).filter(Boolean)),
     pickupDays: unique(stops.map(firstPickupDay).filter(Boolean)),
+    schedule: routeScheduleSummary(stops),
     isRelay: stops.some(s => String(s.routeType).toLowerCase() === 'relay' || s.plcChanged),
     plcMismatch: stops.some(s => s.basePLC !== s.actualPLC && s.basePLC !== '#N/A' && s.actualPLC !== '#N/A'),
     palletWarning: routePalletEstimate > ASSUMPTIONS.palletWarningThreshold
@@ -160,23 +204,25 @@ export function buildLegs({ stops, destinationPLC, origin = null, roadFactor = 1
   return { legs, chargeableMiles, deadheadMiles, totalOperationalMiles: round(chargeableMiles + deadheadMiles, 2) };
 }
 export function stopLabel(s){ return `${s.routeName || s.centerNumber || s.id} (${s.city || ''}, ${s.state || ''})`; }
-export function calculateRateTableCost({ chargeableMiles, weeklyCases, pricingMethod = 'dedicated', fuelPct = null }) {
-  const dedicated = Number(rateTable?.dedicatedRatePerMile || 3.34);
+export function calculateRateTableCost({ chargeableMiles, weeklyCases, pricingMethod = 'dedicated', fuelPct = null, storage = 0, otherCharges = 0 }) {
+  const dedicated = Number(rateTable?.dedicatedRatePerMile || rateTable?.dedicatedTransportationRatePerMile || 3.34);
   const averageFuelPct = fuelPct ?? averageFuelSurchargePct();
   let linehaul = chargeableMiles * dedicated;
   let rateSource = `Rate Table dedicated transportation rate: $${dedicated}/mile`;
   // Commodity matrix support can be added from rateTable ranges later. Dedicated rate is safest for route-level planning.
   if (pricingMethod === 'simple') rateSource = 'Simple $/mile override fallback';
   const fuel = linehaul * averageFuelPct;
-  const totalCost = linehaul + fuel;
+  const totalCost = linehaul + fuel + (Number(storage)||0) + (Number(otherCharges)||0);
   const routePalletEstimate = weeklyCases / ASSUMPTIONS.casesPerPallet;
   const driverHours = chargeableMiles / ASSUMPTIONS.defaultSpeedMph;
   return {
-    linehaul: round(linehaul,2), fuel: round(fuel,2), totalCost: round(totalCost,2),
+    linehaul: round(linehaul,2), fuel: round(fuel,2), storage: round(storage,2), otherCharges: round(otherCharges,2), totalCost: round(totalCost,2),
     fuelPct: round(averageFuelPct*100,2), pallets: round(routePalletEstimate,2), routePalletEstimate: round(routePalletEstimate,2), casesPerPallet: ASSUMPTIONS.casesPerPallet, palletCalculationBasis: `Route pallet estimate = total route cases / ${ASSUMPTIONS.casesPerPallet} cases per pallet`,
     trailer: ASSUMPTIONS.collectionTrailer,
     over18PalletWarning: routePalletEstimate > ASSUMPTIONS.palletWarningThreshold,
     driverHours: round(driverHours,2), over11HourDriverWarning: driverHours > ASSUMPTIONS.driverHourLimit,
+    formulaUsed: `(${round(chargeableMiles,2)} chargeable miles × $${dedicated}/mile) + ${round(averageFuelPct*100,2)}% fuel surcharge + workbook accessorials`,
+    contractRuleUsed: contractRules(),
     rateSource
   };
 }
@@ -190,20 +236,43 @@ export function recommendedPLCForStops(stops){
   const white=sum(stops.map(s=>distanceToPLC(s,'Whitestown PLC')));
   return dallas <= white ? 'Dallas PLC' : 'Whitestown PLC';
 }
+export function plcSwitchEligible(routeGroup, proposedPLC) {
+  return proposedPLC === routeGroup.currentEndpointPLC || routeGroup.isRelay || routeGroup.plcMismatch;
+}
 export function compareScenario({ routeGroup, proposedPLC, roadFactor = 1.18 }) {
   const origin = routeGroup.origin;
   const proposed = buildLegs({ stops: routeGroup.stops, destinationPLC: proposedPLC, origin, roadFactor });
   const proposedCost = calculateRateTableCost({ chargeableMiles: proposed.chargeableMiles, weeklyCases: routeGroup.weeklyCases });
   const currentCost = {
-    chargeableMiles: routeGroup.workbookMiles, linehaul: routeGroup.workbookLinehaul, fuel: routeGroup.workbookFuel,
-    totalCost: routeGroup.workbookTotalCost, pallets: routeGroup.weeklyPallets,
-    driverHours: round(routeGroup.workbookMiles / ASSUMPTIONS.defaultSpeedMph, 2)
+    chargeableMiles: routeGroup.workbookMiles,
+    linehaul: routeGroup.workbookLinehaul,
+    fuel: routeGroup.workbookFuel,
+    storage: round(sum(routeGroup.stops.map(s => s.storageFeeDollar)), 2),
+    otherCharges: round(sum(routeGroup.stops.map(s => s.otherChargesDollar)), 2),
+    totalCost: routeGroup.workbookTotalCost,
+    pallets: routeGroup.weeklyPallets,
+    driverHours: round(routeGroup.workbookMiles / ASSUMPTIONS.defaultSpeedMph, 2),
+    formulaUsed: 'Workbook current contract total = SUM(linehaulCost + fuelSurchargeDollar + storageFeeDollar + otherChargesDollar); charged miles use ordered first-pickup-to-PLC path.',
+    contractRuleUsed: contractRules()
   };
   const weeklySavings = round((currentCost.totalCost || 0) - proposedCost.totalCost, 2);
+  const eligible = plcSwitchEligible(routeGroup, proposedPLC);
+  const scheduleRule = 'Proposed rebuild keeps each center on its current pickup day, pickup time window, and Week A / Week B cadence; no day/cadence move is modeled.';
+  const savingsProven = weeklySavings > 0 && eligible;
+  const finalStatus = !eligible ? 'Needs Contract Validation' : (savingsProven ? 'Recommended' : 'Not Recommended');
   return {
     current: currentCost,
     proposed: { ...proposed, ...proposedCost, endpointPLC: proposedPLC },
-    savings: { weeklyMilesSaved: round((currentCost.chargeableMiles || 0) - proposed.chargeableMiles, 2), weeklyCostSaved: weeklySavings, annualCostSaved: null, annualSavingsDisabled: true, annualSavingsNote: 'Annual savings disabled until current route mileage baseline is validated from ordered chargeable route paths.' }
+    eligibility: { plcSwitchEligible: eligible, reason: eligible ? 'Current PLC retained or route has relay/base-vs-actual mismatch eligibility.' : 'PLC switch not recommended because route is not flagged relay or PLC-mismatch eligible.' },
+    schedule: { feasible: true, ruleUsed: scheduleRule, pickupDays: routeGroup.schedule?.pickupDays || routeGroup.pickupDays, timeWindows: routeGroup.schedule?.timeWindows || [], weekCadence: routeGroup.weekPatterns },
+    savings: {
+      weeklyMilesSaved: round((currentCost.chargeableMiles || 0) - proposed.chargeableMiles, 2),
+      weeklyCostSaved: savingsProven ? weeklySavings : 0,
+      annualCostSaved: savingsProven ? round(weeklySavings * 52, 2) : 0,
+      savingsProven,
+      formulaUsed: `weekly savings = current contract cost ${round(currentCost.totalCost,2)} - proposed contract cost ${round(proposedCost.totalCost,2)}; annual savings = positive weekly savings × 52`,
+      finalStatus
+    }
   };
 }
 export function generateDeterministicCandidates({ scope='all', routeName='', objective='savings', maxRoutes=12, roadFactor=1.18 } = {}) {
@@ -214,7 +283,7 @@ export function generateDeterministicCandidates({ scope='all', routeName='', obj
   const candidates=[];
   for (const g of groups) {
     const recommended = recommendedPLCForStops(g.stops);
-    const plcOptions = unique([recommended, g.currentEndpointPLC, 'Dallas PLC', 'Whitestown PLC']).filter(Boolean);
+    const plcOptions = unique([g.currentEndpointPLC, ...(g.isRelay || g.plcMismatch ? [recommended, 'Dallas PLC', 'Whitestown PLC'] : [])]).filter(Boolean);
     for (const plc of plcOptions) {
       const cmp = compareScenario({ routeGroup: g, proposedPLC: plc, roadFactor });
       const type = plc === g.currentEndpointPLC ? 'Keep / Validate Current Route' : (g.isRelay ? 'Relay PLC Validation' : 'Full Route PLC Rebuild');
@@ -223,7 +292,7 @@ export function generateDeterministicCandidates({ scope='all', routeName='', obj
         currentRoutesImpacted: [g.routeName],
         newRouteName: `${cleanRouteName(g.routeName)}_${plc.includes('Dallas')?'DALLAS':'WHITESTOWN'}_REBUILD`,
         newPLC: plc,
-        stops: g.stops.map((s,i)=>({ id:s.id, name:s.routeName, centerNumber:s.centerNumber, city:s.city, state:s.state, currentRoute:s.routeNameMckesson, proposedStop:i+1 })),
+        stops: g.stops.map((s,i)=>({ id:s.id, name:s.routeName, centerNumber:s.centerNumber, city:s.city, state:s.state, currentRoute:s.routeNameMckesson, proposedStop:i+1, ...stopScheduleSummary(s) })),
         currentChargeableMiles: cmp.current.chargeableMiles,
         newChargeableMiles: cmp.proposed.chargeableMiles,
         currentFuel: cmp.current.fuel,
@@ -231,13 +300,20 @@ export function generateDeterministicCandidates({ scope='all', routeName='', obj
         currentCost: cmp.current.totalCost,
         newCost: cmp.proposed.totalCost,
         weeklySavings: cmp.savings.weeklyCostSaved,
-        annualSavings: null,
-        annualSavingsDisabled: true,
+        annualSavings: cmp.savings.annualCostSaved,
         weeklyMilesSaved: cmp.savings.weeklyMilesSaved,
-        reason: `Route-level comparison for ${g.routeName}; deadhead excluded from cost; chargeable miles start at first pickup and end at ${plc}.`,
+        currentPLC: g.currentEndpointPLC,
+        proposedPLC: plc,
+        pickupDayTimeWindow: cmp.schedule.pickupDays?.join('; ') || '',
+        weekAB: cmp.schedule.weekCadence?.join('/') || '',
+        formulaUsed: cmp.savings.formulaUsed,
+        contractRuleUsed: `charge starts at ${ASSUMPTIONS.chargeStartsAt}; deadhead charged=${ASSUMPTIONS.deadheadCharged}; linehaul/fuel from Rate Table; ${ASSUMPTIONS.collectionTrailer}; ${ASSUMPTIONS.casesPerPallet} cases = 1 pallet`,
+        scheduleRuleUsed: cmp.schedule.ruleUsed,
+        finalStatus: cmp.savings.finalStatus,
+        reason: `Contract-aware route comparison for ${g.routeName}; deadhead excluded from cost; chargeable miles start at first pickup and end at ${plc}. ${cmp.savings.finalStatus === 'Recommended' ? 'Proposed total contract cost is lower.' : 'Not labeled as savings unless proposed contract cost is lower and route is eligible.'}`,
         risks: validationRisks(g, cmp.proposed),
         confidence: 'Medium',
-        calculationBasis: 'Current baseline uses ordered route path miles (first pickup through final PLC); deadhead is shown separately and excluded. Fallback road-mile estimate unless actual Geoapify route loaded by calculate-route API.',
+        calculationBasis: 'Contract-aware comparison: current/proposed costs use chargeable first-pickup-to-PLC miles, Rate Table linehaul, fuel surcharge, accessorials when present, and existing pickup day/time/cadence constraints. Fallback road-mile estimate unless actual truck route is loaded.',
         routeGroup: g
       });
     }
