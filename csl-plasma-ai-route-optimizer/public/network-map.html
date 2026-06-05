@@ -3223,9 +3223,41 @@ refresh();
   function safeValue(id){ const el=$(id); return el ? el.value : ""; }
   function setAiOutput(html){ const el=$('aiOptimizerOutput'); if(el) el.innerHTML=html; }
   function htmlEscape(value){ return String(value ?? '').replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
+  function mixCell(mix, key){ return (mix && mix[key]) || {centerCount:0,centerPct:0,cases:0,pallets:0,weeklyCost:0,annualCost:0}; }
+  function mixTable(title, mix, change){
+    const rows=['Dallas','Whitestown'].map(key=>{ const m=mixCell(mix,key); const c=change ? mixCell(change,key) : null; return `<tr><td>${key}</td><td>${Number(m.centerCount||0).toLocaleString()}</td><td>${Number(m.centerPct||0).toFixed(1)}%</td><td>${Number(m.cases||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td>${Number(m.pallets||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td>$${Number(m.weeklyCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</td><td>$${Number(m.annualCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</td>${c?`<td>${Number(c.centerCount||0)>=0?'+':''}${Number(c.centerCount||0).toLocaleString()}</td><td>${Number(c.weeklyCost||0)>=0?'+':''}$${Number(c.weeklyCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk</td>`:''}</tr>`; }).join('');
+    return `<div style="margin-top:10px"><div class="ai-title">${title}</div><table><thead><tr><th>PLC</th><th>Centers</th><th>%</th><th>Cases</th><th>Pallets</th><th>Weekly Cost</th><th>Annual Cost</th>${change?'<th>Center Δ</th><th>Cost Δ</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  function distributionBars(title, mix){
+    const d=mixCell(mix,'Dallas'), w=mixCell(mix,'Whitestown');
+    return `<div style="margin:8px 0"><b>${title}</b><div style="height:22px;display:flex;border-radius:999px;overflow:hidden;border:1px solid #cbd5e1;background:#f8fafc"><div style="width:${Math.max(0,Math.min(100,Number(d.centerPct||0)))}%;background:#2563eb;color:white;text-align:center;font-size:12px;line-height:22px">Dallas ${Number(d.centerPct||0).toFixed(1)}%</div><div style="width:${Math.max(0,Math.min(100,Number(w.centerPct||0)))}%;background:#f97316;color:white;text-align:center;font-size:12px;line-height:22px">Whitestown ${Number(w.centerPct||0).toFixed(1)}%</div></div></div>`;
+  }
+  function movedTable(title, rows){
+    const body=(rows||[]).slice(0,60).map(r=>`<tr><td>${htmlEscape(r.centerNumber||r.id||'')}</td><td>${htmlEscape(r.centerName||'')}</td><td>${htmlEscape((r.city||'')+', '+(r.state||''))}</td><td>${htmlEscape(r.currentRoute||'')}</td><td>${htmlEscape(r.currentPLC||'')}</td><td>${htmlEscape(r.proposedPLC||'')}</td><td>${htmlEscape(r.proposedGroup||'')}</td></tr>`).join('') || '<tr><td colspan="7">No centers moved.</td></tr>';
+    return `<div style="margin-top:10px"><div class="ai-title">${title}</div><table><thead><tr><th>Center #</th><th>Center</th><th>City/State</th><th>Current Route</th><th>Current PLC</th><th>Proposed PLC</th><th>Proposed Group</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+  function groupTable(groups){
+    const body=(groups||[]).slice(0,30).map(g=>{ const p=g.savingsProof||{}; return `<tr><td>${htmlEscape(g.proposedGroupName||'')}</td><td>${htmlEscape(g.proposedPLC||'')}</td><td>${Number(p.centerCount||0).toLocaleString()}</td><td>${htmlEscape(g.pickupDay||'')}</td><td>${htmlEscape(g.weekAB||'')}</td><td>${Number(p.proposedChargedMiles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td>$${Number(p.proposedWeeklyCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</td><td>$${Number(p.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</td><td>${Number(p.trailerUtilizationPct||0).toFixed(1)}%</td><td>${htmlEscape(p.savingsStatus||'')}</td></tr>`; }).join('') || '<tr><td colspan="10">No proposed route groups returned.</td></tr>';
+    return `<div style="margin-top:10px"><div class="ai-title">AI Suggested Route Groups + Savings Proof</div><table><thead><tr><th>Group</th><th>PLC</th><th>Centers</th><th>Pickup Day</th><th>Week A/B</th><th>Proposed Miles</th><th>Proposed Cost</th><th>Weekly Savings</th><th>Trailer Util.</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  }
   function renderAiResult(result){
     if(!result){ setAiOutput('<div class="ai-title">No result returned.</div>'); return; }
+    window.latestAiNetworkResult = result;
     const scenarios = result.networkScenarios || result.recommendations || [];
+    const top = scenarios[0] || {};
+    const dashboard = top.currentDistributionMix ? `
+      <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:8px">
+        <div class="ai-title">Before vs After Distribution Dashboard</div>
+        ${distributionBars('Current Dallas vs Whitestown center mix', top.currentDistributionMix)}
+        ${distributionBars('Proposed Dallas vs Whitestown center mix', top.proposedDistributionMix)}
+        ${mixTable('Current Distribution Mix', top.currentDistributionMix)}
+        ${mixTable('Proposed Distribution Mix (Top Scenario)', top.proposedDistributionMix, top.distributionChange)}
+        ${movedTable('Centers moved Dallas → Whitestown', top.centersMovedDallasToWhitestown)}
+        ${movedTable('Centers moved Whitestown → Dallas', top.centersMovedWhitestownToDallas)}
+        <div><b>Total reassignment savings proof:</b> $${Number(top.totalReassignmentSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk. Deterministic math calculates savings; AI only suggests/labels route groups.</div>
+        <button type="button" class="btn" onclick="window.showAiProposedGroups(0)">Show Proposed AI Groups on Map</button>
+        <button type="button" class="btn secondary" onclick="window.showCurrentOptimizationRoutes()">Show Current Routes</button>
+      </div>` : '';
     const cards = scenarios.map((r, idx) => `
       <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:8px">
         <div class="ai-title">${idx+1}. ${htmlEscape(r.scenarioType || r.newRouteName || r.recommendationType || 'Network Scenario')}</div>
@@ -3235,10 +3267,12 @@ refresh();
         <div><b>Savings:</b> $${Number(r.savings ?? r.weeklySavings ?? 0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk (${Number(r.savingsPct || 0).toLocaleString(undefined,{maximumFractionDigits:1})}%) | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
         <div><b>Affected routes:</b> ${htmlEscape((r.affectedRoutes || r.currentRoutesImpacted || []).slice(0,25).join(', '))}${(r.affectedRoutes||[]).length>25?' …':''}</div>
         <div><b>Affected centers:</b> ${htmlEscape((r.affectedCenters || (r.stops||[]).map(s=>s.centerNumber||s.id)).slice(0,40).join(', '))}${(r.affectedCenters||[]).length>40?' …':''}</div>
+        ${groupTable(r.proposedRouteGroups)}
         <div><b>Formula:</b> ${htmlEscape(r.formulaUsed || '')}</div>
-        <div><b>Contract validation:</b> ${htmlEscape(r.contractRuleUsed || '')}</div>
+        <div><b>Contract validation:</b> ${htmlEscape(typeof r.contractRuleUsed === 'string' ? r.contractRuleUsed : JSON.stringify(r.contractRuleUsed||{}))}</div>
         <div><b>Schedule validation:</b> ${htmlEscape(r.scheduleRuleUsed || '')}</div>
         <div><b>Operational risk:</b> ${htmlEscape(r.operationalRisk || (r.risks||[]).join('; ') || '')}</div>
+        <button type="button" class="btn secondary" onclick="window.showAiProposedGroups(${idx})">Map this scenario</button>
       </div>`).join('');
     setAiOutput(`
       <div class="ai-title">${htmlEscape(result.summary || 'Network-wide AI Route Optimization Result')}</div>
@@ -3247,10 +3281,38 @@ refresh();
       <div><b>Data source:</b> ${htmlEscape(result.dataSource || 'Excel-derived route data + backend route calculator')}</div>
       <div><b>Calculation status:</b> ${htmlEscape(result.calculationStatus || '')}</div>
       <div><b>Leadership summary:</b> ${htmlEscape(result.leadershipSummary || '')}</div>
+      ${dashboard}
       ${cards || '<div>No network scenarios returned.</div>'}
       <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:8px"><b>Questions for McKesson:</b><br>${htmlEscape((result.questionsForMcKesson||[]).join('\n'))}</div>
     `);
   }
+  function findCenterForGroupItem(item){
+    return (DATA.records||[]).find(r => String(r.id)===String(item.id) || String(r.centerNumber)===String(item.centerNumber));
+  }
+  window.showCurrentOptimizationRoutes = function(){ setView('optimization'); refreshOptimization(); };
+  window.showAiProposedGroups = function(index=0){
+    const result=window.latestAiNetworkResult; const scenario=(result?.networkScenarios||result?.recommendations||[])[index];
+    if(!scenario){ return; }
+    setView('optimization'); centerLayer.clearLayers(); lineLayer.clearLayers(); plcLayer.clearLayers(); truckLayer.clearLayers();
+    for(const [name,c] of Object.entries(plcCoords)){ if(!c) continue; plcLayer.addLayer(L.marker([c.lat,c.lng], {icon:plcIcon(name,colorFor(name))}).bindPopup(`<b>${htmlEscape(name)}</b>`)); }
+    const bounds=[];
+    (scenario.proposedRouteGroups||[]).forEach((group,gidx)=>{
+      const color=routeColor(group.proposedGroupName || `AI-${gidx+1}`);
+      const sequence=(group.routeSequence||[]).map(findCenterForGroupItem).filter(r=>r && r.hasCoords);
+      const endpoint=plcCoords[group.proposedPLC];
+      sequence.forEach((r,idx)=>{
+        bounds.push([r.lat,r.lng]);
+        centerLayer.addLayer(L.marker([r.lat,r.lng], {icon:stopIcon(idx+1,color), zIndexOffset:2400}).bindPopup(`<div class="popup"><h3>${htmlEscape(group.proposedGroupName||'AI Group')} stop ${idx+1}</h3><div>${htmlEscape(r.routeName||'')} · ${htmlEscape(r.city||'')}, ${htmlEscape(r.state||'')}</div><table><tr><td>Current route</td><td>${htmlEscape(r.routeNameMckesson||'')}</td></tr><tr><td>Proposed PLC</td><td>${htmlEscape(group.proposedPLC||'')}</td></tr><tr><td>Pickup</td><td>${htmlEscape(group.pickupDay||'')}</td></tr><tr><td>Week A/B</td><td>${htmlEscape(group.weekAB||'')}</td></tr></table></div>`));
+      });
+      if(sequence.length && endpoint){
+        const path=sequence.map(r=>[r.lat,r.lng]).concat([[endpoint.lat,endpoint.lng]]); bounds.push([endpoint.lat,endpoint.lng]);
+        lineLayer.addLayer(L.polyline(path,{color,weight:4,opacity:.82}).bindPopup(`<b>${htmlEscape(group.proposedGroupName||'AI Group')}</b><br>PLC: ${htmlEscape(group.proposedPLC||'')}<br>Stops: ${sequence.length}<br>Path: first pickup → stops → final PLC`));
+      }
+    });
+    const curr=scenario.currentDistributionMix, prop=scenario.proposedDistributionMix;
+    $('plcSummary').innerHTML=`<b>AI Proposed Route Groups</b><br/>Scenario: <b>${htmlEscape(scenario.scenarioType||scenario.id||'')}</b><br/>Current cost: <b>$${Number(scenario.currentNetworkCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk</b> → Proposed: <b>$${Number(scenario.proposedNetworkCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk</b><br/>Savings proof: <b>$${Number(scenario.savings||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk</b>; Status: <b>${htmlEscape(scenario.finalStatus||'')}</b><br/>Dallas centers: ${Number(curr?.Dallas?.centerCount||0)} → ${Number(prop?.Dallas?.centerCount||0)}; Whitestown centers: ${Number(curr?.Whitestown?.centerCount||0)} → ${Number(prop?.Whitestown?.centerCount||0)}<div class="mini-note">Markers are numbered by proposed stop sequence. Lines start at the first pickup and end at final PLC; deadhead/origin is not drawn or charged in this AI group view.</div>`;
+    if(bounds.length){ map.fitBounds(bounds,{padding:[28,28]}); }
+  };
   async function callAi(scope){
     const output=$('aiOptimizerOutput');
     if(output) output.innerHTML='<div class="ai-title">Running AI route optimizer...</div>This may take a minute if actual road-route calculations are enabled.';

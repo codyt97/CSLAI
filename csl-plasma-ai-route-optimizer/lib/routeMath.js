@@ -362,6 +362,142 @@ function currentNetworkBaseline(groups) {
     cases: round(sum(groups.map(g => g.weeklyCases)),2)
   };
 }
+
+function blankDistributionEntry(plc) {
+  return { plc, centerCount: 0, centerPct: 0, cases: 0, pallets: 0, weeklyCost: 0, annualCost: 0 };
+}
+function normalizeDistributionName(plc) {
+  return String(plc || '').toLowerCase().includes('whitestown') ? 'Whitestown PLC' : 'Dallas PLC';
+}
+function finalizeDistributionMix(mix) {
+  const totalCenters = sum(Object.values(mix).map(v => v.centerCount));
+  const totalCases = sum(Object.values(mix).map(v => v.cases));
+  const totalPallets = sum(Object.values(mix).map(v => v.pallets));
+  const totalWeeklyCost = sum(Object.values(mix).map(v => v.weeklyCost));
+  for (const entry of Object.values(mix)) {
+    entry.centerPct = totalCenters ? round((entry.centerCount / totalCenters) * 100, 2) : 0;
+    entry.cases = round(entry.cases, 2);
+    entry.pallets = round(entry.pallets, 2);
+    entry.weeklyCost = round(entry.weeklyCost, 2);
+    entry.annualCost = round(entry.weeklyCost * 52, 2);
+  }
+  return { Dallas: mix['Dallas PLC'], Whitestown: mix['Whitestown PLC'], totals: { centerCount: totalCenters, cases: round(totalCases, 2), pallets: round(totalPallets, 2), weeklyCost: round(totalWeeklyCost, 2), annualCost: round(totalWeeklyCost * 52, 2) } };
+}
+function currentDistributionMix(groups) {
+  const mix = { 'Dallas PLC': blankDistributionEntry('Dallas PLC'), 'Whitestown PLC': blankDistributionEntry('Whitestown PLC') };
+  for (const g of groups) {
+    const costPerCase = g.weeklyCases ? g.workbookTotalCost / g.weeklyCases : 0;
+    for (const stop of g.stops || []) {
+      const plc = normalizeDistributionName(routeEndpointForRecord(stop));
+      const cases = Number(stop.weeklyCases) || 0;
+      mix[plc].centerCount += 1;
+      mix[plc].cases += cases;
+      mix[plc].pallets += cases / ASSUMPTIONS.casesPerPallet;
+      mix[plc].weeklyCost += costPerCase ? cases * costPerCase : Number(stop.totalRouteCost) || 0;
+    }
+  }
+  return finalizeDistributionMix(mix);
+}
+function proposedDistributionMix(pricedRoutes) {
+  const mix = { 'Dallas PLC': blankDistributionEntry('Dallas PLC'), 'Whitestown PLC': blankDistributionEntry('Whitestown PLC') };
+  for (const route of pricedRoutes) {
+    const plc = normalizeDistributionName(route.endpointPLC);
+    const routeCases = Number(route.cases) || routeCasesForStops(route.stops || []);
+    const costPerCase = routeCases ? (Number(route.cost?.totalCost) || 0) / routeCases : 0;
+    for (const stop of route.stops || []) {
+      const cases = Number(stop.weeklyCases) || 0;
+      mix[plc].centerCount += 1;
+      mix[plc].cases += cases;
+      mix[plc].pallets += cases / ASSUMPTIONS.casesPerPallet;
+      mix[plc].weeklyCost += costPerCase ? cases * costPerCase : 0;
+    }
+  }
+  return finalizeDistributionMix(mix);
+}
+function routeCasesForStops(stops) { return sum((stops || []).map(s => s.weeklyCases)); }
+function distributionChange(currentMix, proposedMix) {
+  const entry = key => ({
+    centerCount: (proposedMix[key]?.centerCount || 0) - (currentMix[key]?.centerCount || 0),
+    centerPct: round((proposedMix[key]?.centerPct || 0) - (currentMix[key]?.centerPct || 0), 2),
+    cases: round((proposedMix[key]?.cases || 0) - (currentMix[key]?.cases || 0), 2),
+    pallets: round((proposedMix[key]?.pallets || 0) - (currentMix[key]?.pallets || 0), 2),
+    weeklyCost: round((proposedMix[key]?.weeklyCost || 0) - (currentMix[key]?.weeklyCost || 0), 2),
+    annualCost: round((proposedMix[key]?.annualCost || 0) - (currentMix[key]?.annualCost || 0), 2)
+  });
+  return { Dallas: entry('Dallas'), Whitestown: entry('Whitestown') };
+}
+function centersMovedByDistribution(pricedRoutes) {
+  const dallasToWhitestown = [], whitestownToDallas = [];
+  for (const route of pricedRoutes) {
+    const proposedPLC = normalizeDistributionName(route.endpointPLC);
+    for (const stop of route.stops || []) {
+      const currentPLC = normalizeDistributionName(routeEndpointForRecord(stop));
+      if (currentPLC === proposedPLC) continue;
+      const row = {
+        id: stop.id || '',
+        centerNumber: stop.centerNumber || '',
+        centerName: stop.routeName || stop.centerName || stop.name || '',
+        city: stop.city || '',
+        state: stop.state || '',
+        currentRoute: stop.routeNameMckesson || '',
+        currentPLC,
+        proposedPLC,
+        proposedGroup: route.routeName || ''
+      };
+      if (currentPLC === 'Dallas PLC' && proposedPLC === 'Whitestown PLC') dallasToWhitestown.push(row);
+      if (currentPLC === 'Whitestown PLC' && proposedPLC === 'Dallas PLC') whitestownToDallas.push(row);
+    }
+  }
+  return { dallasToWhitestown, whitestownToDallas };
+}
+function routeValidationSignals(route, validation) {
+  const missingTime = (route.stops || []).some(s => !s.pickupHours);
+  const truckMilesEstimated = !(route.legs?.truckValidMiles === true);
+  const routeRisks = validation.risks.filter(r => String(r).startsWith(`${route.routeName}:`));
+  if (missingTime) routeRisks.push(`${route.routeName}: pickup time window missing for at least one center.`);
+  if (truckMilesEstimated) routeRisks.push(`${route.routeName}: truck-valid 48 ft refrigerated mileage is not loaded; miles are estimated.`);
+  return { missingTimeWindow: missingTime, truckMilesEstimated, risks: unique(routeRisks) };
+}
+function proposedRouteGroup(route, validation, groups=[]) {
+  const currentRouteNames = unique((route.stops || []).map(s => cleanRouteName(s.routeNameMckesson)).filter(Boolean));
+  const currentGroups = groups.filter(g => currentRouteNames.includes(cleanRouteName(g.routeName)));
+  const currentCost = round(sum(currentGroups.map(g => g.workbookTotalCost)), 2);
+  const currentMiles = round(sum(currentGroups.map(g => g.workbookMiles)), 2);
+  const proposedCost = Number(route.cost?.totalCost) || 0;
+  const weeklySavingsRaw = round(currentCost - proposedCost, 2);
+  const signals = routeValidationSignals(route, validation);
+  const validationBlocked = signals.missingTimeWindow || signals.truckMilesEstimated || signals.risks.length;
+  const savingsStatus = validationBlocked ? 'Needs Validation' : (weeklySavingsRaw > 0 ? 'Recommended' : 'Not Recommended');
+  const orderedStops = route.legs?.legs?.length ? (route.stops || []) : (route.stops || []);
+  return {
+    proposedGroupName: route.routeName,
+    proposedPLC: route.endpointPLC,
+    centersIncluded: (route.stops || []).map(s => ({ id: s.id || '', centerNumber: s.centerNumber || '', centerName: s.routeName || s.centerName || '', city: s.city || '', state: s.state || '', currentRoute: s.routeNameMckesson || '', currentPLC: routeEndpointForRecord(s) })),
+    pickupDay: unique((route.stops || []).flatMap(s => scheduleForStop(s).map(x => `${x.day}:${x.value}`))).join('; ') || 'Not scheduled',
+    weekAB: unique((route.stops || []).map(s => [s.weekPatternA ? 'A' : '', s.weekPatternB ? 'B' : ''].filter(Boolean).join('/')).filter(Boolean)).join(', ') || 'A/B',
+    pickupTimeWindow: unique((route.stops || []).map(s => s.pickupHours).filter(Boolean)).join(', ') || 'Missing',
+    routeSequence: orderedStops.map((s, i) => ({ stop: i + 1, id: s.id || '', centerNumber: s.centerNumber || '', centerName: s.routeName || s.centerName || '', lat: s.lat, lng: s.lng })),
+    reasonForGrouping: `Grouped as a full route-group candidate by PLC (${route.endpointPLC}), schedule key (${routeScheduleKey(route.stops)}), and ${ASSUMPTIONS.collectionTrailer} pallet utilization.`,
+    riskNotes: signals.risks,
+    savingsProof: {
+      currentTotalChargedMiles: currentMiles,
+      proposedChargedMiles: route.legs.chargeableMiles,
+      currentWeeklyCost: currentCost,
+      proposedWeeklyCost: round(proposedCost, 2),
+      weeklySavings: validationBlocked || weeklySavingsRaw <= 0 ? 0 : weeklySavingsRaw,
+      annualSavings: validationBlocked || weeklySavingsRaw <= 0 ? 0 : round(weeklySavingsRaw * 52, 2),
+      centerCount: (route.stops || []).length,
+      pallets: route.pallets,
+      trailerUtilizationPct: round((route.pallets / ASSUMPTIONS.palletWarningThreshold) * 100, 2),
+      costPerPallet: route.pallets ? round(proposedCost / route.pallets, 2) : 0,
+      costPerMile: route.legs.chargeableMiles ? round(proposedCost / route.legs.chargeableMiles, 2) : 0,
+      formulaUsed: `weekly savings = current group workbook cost ${currentCost} - proposed contract cost ${round(proposedCost, 2)}; proposed cost = (${route.legs.chargeableMiles} charged miles × rate/mile) + fuel + workbook accessorials when present; annual savings = weekly savings × 52`,
+      contractRuleUsed: `Charge begins at first pickup; deadhead excluded unless contract changes; ${ASSUMPTIONS.casesPerPallet} cases = 1 pallet; ${ASSUMPTIONS.collectionTrailer}.`,
+      scheduleRuleUsed: 'No center is moved off its scheduled pickup day, pickup window, or Week A/B cadence in this proposed route group.',
+      savingsStatus
+    }
+  };
+}
 function validateNetworkRoutes(routes) {
   const risks = [];
   let contractValid = true, scheduleValid = true, timeWindowValid = true, weekCadenceValid = true;
@@ -396,11 +532,19 @@ function networkScenario({ id, scenarioType, description, groups, routes, roadFa
     pallets: round(sum(pricedRoutes.map(r => r.pallets)),2),
     cases: round(sum(pricedRoutes.map(r => r.cases)),2)
   };
+  const currentMix = currentDistributionMix(groups);
+  const proposedMix = proposedDistributionMix(pricedRoutes);
+  const movedCenters = centersMovedByDistribution(pricedRoutes);
+  const proposedRouteGroups = pricedRoutes.map(r => proposedRouteGroup(r, validation, groups));
+  const groupSavings = round(sum(proposedRouteGroups.map(g => g.savingsProof?.weeklySavings || 0)), 2);
   const weeklySavingsRaw = round(baseline.totalCost - proposed.totalCost, 2);
   const valid = validation.contractValid && validation.scheduleValid && validation.timeWindowValid && validation.weekCadenceValid;
-  const weeklySavings = valid && weeklySavingsRaw > 0 ? weeklySavingsRaw : 0;
+  const estimatedMileage = true;
+  const finalStatus = !valid || estimatedMileage ? 'Needs Contract Validation' : (weeklySavingsRaw > 0 ? 'Recommended' : 'Not Recommended');
+  const weeklySavings = weeklySavingsRaw > 0 ? weeklySavingsRaw : 0;
   const affectedRoutes = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.routeNameMckesson)).filter(Boolean));
   const affectedCenters = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.centerNumber || s.id)).filter(Boolean));
+  const mileageRisk = 'Truck-valid 48 ft refrigerated route miles are not loaded; proposed miles use estimated road-factor mileage and must be validated before recommendation status can be upgraded.';
   return {
     id, scenarioType, description,
     currentNetworkCost: baseline.totalCost,
@@ -412,16 +556,24 @@ function networkScenario({ id, scenarioType, description, groups, routes, roadFa
     savingsPct: baseline.totalCost ? round((weeklySavings / baseline.totalCost) * 100, 2) : 0,
     affectedRoutes,
     affectedCenters,
-    operationalRisk: validation.risks.length ? validation.risks.join(' ') : 'No schedule/cadence/contract violations detected in deterministic screen; validate with McKesson before execution.',
-    confidence: valid ? (weeklySavings > 0 ? 'Medium' : 'Low') : 'Low',
-    validation,
+    currentDistributionMix: currentMix,
+    proposedDistributionMix: proposedMix,
+    distributionChange: distributionChange(currentMix, proposedMix),
+    centersMovedDallasToWhitestown: movedCenters.dallasToWhitestown,
+    centersMovedWhitestownToDallas: movedCenters.whitestownToDallas,
+    totalReassignmentSavings: groupSavings,
+    proposedRouteGroups,
+    operationalRisk: unique([...(validation.risks || []), mileageRisk]).join(' '),
+    confidence: finalStatus === 'Needs Contract Validation' ? 'Low' : (weeklySavings > 0 ? 'Medium' : 'Low'),
+    validation: { ...validation, truckValidMileageAvailable: false },
     baseline,
     proposed,
     routeCount: proposed.routeCount,
     routes: pricedRoutes.map(r => ({ routeName: r.routeName, endpointPLC: r.endpointPLC, stopCount: (r.stops||[]).length, chargedMiles: r.legs.chargeableMiles, totalCost: r.cost.totalCost, scheduleKey: routeScheduleKey(r.stops), centers: (r.stops||[]).map(s => s.centerNumber || s.id) })),
-    formulaUsed: `weekly savings = current network weekly cost ${baseline.totalCost} - proposed network weekly cost ${proposed.totalCost}; annual savings = weekly savings × 52`,
+    formulaUsed: `weekly savings = current network weekly cost ${baseline.totalCost} - proposed network weekly cost ${proposed.totalCost}; annual savings = positive weekly savings × 52; deterministic savings proof is calculated after AI/group generation, not by the AI narrative.`,
     contractRuleUsed: contractRules(),
-    scheduleRuleUsed: 'Network scenarios preserve each center pickup day, pickup time window, and Week A/B cadence unless flagged in operationalRisk.'
+    scheduleRuleUsed: 'Network scenarios preserve each center pickup day, pickup time window, and Week A/B cadence unless flagged in operationalRisk.',
+    finalStatus
   };
 }
 function currentRoutesFromGroups(groups) { return groups.map(g => ({ routeName: g.routeName, endpointPLC: g.currentEndpointPLC, stops: g.stops, requireSameSchedule: false })); }

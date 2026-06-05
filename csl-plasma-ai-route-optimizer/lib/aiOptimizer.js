@@ -1,5 +1,36 @@
 import { generateNetworkCandidates, groupRouteRecords, ASSUMPTIONS, contractRules } from './routeMath.js';
 
+const MIX_ENTRY_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: { plc: { type: 'string' }, centerCount: { type: 'number' }, centerPct: { type: 'number' }, cases: { type: 'number' }, pallets: { type: 'number' }, weeklyCost: { type: 'number' }, annualCost: { type: 'number' } },
+  required: ['plc','centerCount','centerPct','cases','pallets','weeklyCost','annualCost']
+};
+const MIX_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    Dallas: MIX_ENTRY_SCHEMA,
+    Whitestown: MIX_ENTRY_SCHEMA,
+    totals: { type: 'object', additionalProperties: false, properties: { centerCount: { type: 'number' }, cases: { type: 'number' }, pallets: { type: 'number' }, weeklyCost: { type: 'number' }, annualCost: { type: 'number' } }, required: ['centerCount','cases','pallets','weeklyCost','annualCost'] }
+  },
+  required: ['Dallas','Whitestown','totals']
+};
+const MOVED_CENTER_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: { id: { type: 'string' }, centerNumber: { type: 'string' }, centerName: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, currentRoute: { type: 'string' }, currentPLC: { type: 'string' }, proposedPLC: { type: 'string' }, proposedGroup: { type: 'string' } },
+  required: ['id','centerNumber','centerName','city','state','currentRoute','currentPLC','proposedPLC','proposedGroup']
+};
+const PROPOSED_GROUP_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    proposedGroupName: { type: 'string' }, proposedPLC: { type: 'string' }, pickupDay: { type: 'string' }, weekAB: { type: 'string' }, pickupTimeWindow: { type: 'string' },
+    centersIncluded: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' }, centerNumber: { type: 'string' }, centerName: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' }, currentRoute: { type: 'string' }, currentPLC: { type: 'string' } }, required: ['id','centerNumber','centerName','city','state','currentRoute','currentPLC'] } },
+    routeSequence: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { stop: { type: 'number' }, id: { type: 'string' }, centerNumber: { type: 'string' }, centerName: { type: 'string' }, lat: { type: 'number' }, lng: { type: 'number' } }, required: ['stop','id','centerNumber','centerName','lat','lng'] } },
+    reasonForGrouping: { type: 'string' }, riskNotes: { type: 'array', items: { type: 'string' } },
+    savingsProof: { type: 'object', additionalProperties: false, properties: { currentTotalChargedMiles: { type: 'number' }, proposedChargedMiles: { type: 'number' }, currentWeeklyCost: { type: 'number' }, proposedWeeklyCost: { type: 'number' }, weeklySavings: { type: 'number' }, annualSavings: { type: 'number' }, centerCount: { type: 'number' }, pallets: { type: 'number' }, trailerUtilizationPct: { type: 'number' }, costPerPallet: { type: 'number' }, costPerMile: { type: 'number' }, formulaUsed: { type: 'string' }, contractRuleUsed: { type: 'string' }, scheduleRuleUsed: { type: 'string' }, savingsStatus: { type: 'string' } }, required: ['currentTotalChargedMiles','proposedChargedMiles','currentWeeklyCost','proposedWeeklyCost','weeklySavings','annualSavings','centerCount','pallets','trailerUtilizationPct','costPerPallet','costPerMile','formulaUsed','contractRuleUsed','scheduleRuleUsed','savingsStatus'] }
+  },
+  required: ['proposedGroupName','proposedPLC','pickupDay','weekAB','pickupTimeWindow','centersIncluded','routeSequence','reasonForGrouping','riskNotes','savingsProof']
+};
+
 const NETWORK_SCENARIO_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -15,6 +46,12 @@ const NETWORK_SCENARIO_SCHEMA = {
     savingsPct: { type: 'number' },
     affectedRoutes: { type: 'array', items: { type: 'string' } },
     affectedCenters: { type: 'array', items: { type: 'string' } },
+    currentDistributionMix: MIX_SCHEMA,
+    proposedDistributionMix: MIX_SCHEMA,
+    centersMovedDallasToWhitestown: { type: 'array', items: MOVED_CENTER_SCHEMA },
+    centersMovedWhitestownToDallas: { type: 'array', items: MOVED_CENTER_SCHEMA },
+    totalReassignmentSavings: { type: 'number' },
+    proposedRouteGroups: { type: 'array', items: PROPOSED_GROUP_SCHEMA },
     operationalRisk: { type: 'string' },
     confidence: { type: 'string' },
     formulaUsed: { type: 'string' },
@@ -22,7 +59,7 @@ const NETWORK_SCENARIO_SCHEMA = {
     scheduleRuleUsed: { type: 'string' },
     finalStatus: { type: 'string', enum: ['Recommended','Not Recommended','Needs Contract Validation'] }
   },
-  required: ['id','scenarioType','description','currentNetworkCost','proposedNetworkCost','currentAnnualCost','proposedAnnualCost','savings','annualSavings','savingsPct','affectedRoutes','affectedCenters','operationalRisk','confidence','formulaUsed','contractRuleUsed','scheduleRuleUsed','finalStatus']
+  required: ['id','scenarioType','description','currentNetworkCost','proposedNetworkCost','currentAnnualCost','proposedAnnualCost','savings','annualSavings','savingsPct','affectedRoutes','affectedCenters','currentDistributionMix','proposedDistributionMix','centersMovedDallasToWhitestown','centersMovedWhitestownToDallas','totalReassignmentSavings','proposedRouteGroups','operationalRisk','confidence','formulaUsed','contractRuleUsed','scheduleRuleUsed','finalStatus']
 };
 
 const SCHEMA = {
@@ -68,13 +105,16 @@ export async function runAiRouteOptimizer(input) {
       'Do not recommend PLC switch unless the route/centers are eligible under the supplied contract/screening logic.',
       'Do not count deadhead as savings unless the contract says deadhead is charged.',
       'Rank the top 20 scenarios by proven network savings; no savings label unless proposed total network contract cost is lower than current total network contract cost.',
-      'Use truck-valid miles when available; otherwise label mileage as estimated.'
+      'Use truck-valid miles when available; otherwise label mileage as estimated.',
+      'AI may suggest proposed route groups, but deterministic math must calculate savings proof for every group.',
+      'Return proposed route groups with group name, PLC, centers, pickup day, Week A/B, route sequence, grouping reason, and risk notes.'
     ],
     currentNetwork: {
       routeCount: groups.length,
       stopCount: groups.reduce((a,g)=>a+g.stopCount,0),
       weeklyCost: currentNetworkCost,
       annualCost: currentAnnualCost,
+      centerLevelData: centerLevelData(groups),
       routeGroups: groups.map(g => ({
         routeName: g.routeName, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType, stopCount: g.stopCount,
         weeklyCases: g.weeklyCases, routePalletEstimate: g.routePalletEstimate, currentRoutePathMiles: g.workbookMiles,
@@ -91,7 +131,7 @@ export async function runAiRouteOptimizer(input) {
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL || 'gpt-5.5',
       input: [
-        { role: 'system', content: 'You are a network-wide McKesson cold-chain transportation optimizer. Analyze the full plasma pickup network, not individual routes. Return only valid JSON matching the schema.' },
+        { role: 'system', content: 'You are a network-wide McKesson cold-chain transportation optimizer. Analyze the full plasma pickup network, not individual routes. Suggest full proposed route groups from center-level data, but use the provided deterministic savings proof for costs. Return only valid JSON matching the schema.' },
         { role: 'user', content: JSON.stringify(payload) }
       ],
       text: { format: { type: 'json_schema', name: 'network_optimizer_result', strict: true, schema: SCHEMA } }
@@ -100,8 +140,43 @@ export async function runAiRouteOptimizer(input) {
   const data = await res.json();
   if (!res.ok) return fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason: `OpenAI API failed: ${data.error?.message || res.status}` });
   const text = data.output_text || data.output?.flatMap(o=>o.content||[]).map(c=>c.text||'').join('') || '';
-  try { return JSON.parse(text); }
+  try {
+    const parsed = JSON.parse(text);
+    const deterministicScenarios = networkScenarios.slice(0, Number(maxRoutes)||20).map(scenarioForOutput);
+    return {
+      ...parsed,
+      scope: 'network-wide',
+      currentNetworkCost: Number(currentNetworkCost || 0),
+      currentAnnualCost: Number(currentAnnualCost || 0),
+      networkScenarios: deterministicScenarios,
+      recommendations: deterministicScenarios,
+      calculationStatus: `${parsed.calculationStatus || 'OpenAI route-group narrative received.'} Deterministic backend math owns all costs, distribution mix, savings proof, and final status labels.`
+    };
+  }
   catch { return fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason: 'OpenAI returned non-JSON. Returning deterministic network-wide scenarios.' }); }
+}
+
+
+function centerLevelData(groups) {
+  return groups.flatMap(g => (g.stops || []).map(stop => ({
+    centerName: stop.routeName || stop.centerName || '',
+    centerNumber: stop.centerNumber || '',
+    city: stop.city || '',
+    state: stop.state || '',
+    latitude: Number(stop.lat) || 0,
+    longitude: Number(stop.lng) || 0,
+    currentPLC: String(stop.routeType || '').toLowerCase() === 'relay' ? (stop.actualPLC || g.currentEndpointPLC || '') : (stop.basePLC || g.currentEndpointPLC || ''),
+    routeName: stop.routeNameMckesson || g.routeName || '',
+    pickupDay: g.schedule?.pickupDays?.join('; ') || g.pickupDays?.join(', ') || '',
+    pickupTimeWindow: stop.pickupHours || '',
+    weekA: stop.weekPatternA || '',
+    weekB: stop.weekPatternB || '',
+    cases: Number(stop.weeklyCases) || 0,
+    pallets: (Number(stop.weeklyCases) || 0) / ASSUMPTIONS.casesPerPallet,
+    currentMiles: Number(stop.weeklyMiles) || 0,
+    currentCost: Number(stop.totalRouteCost) || 0,
+    contractRules: contractRules()
+  })));
 }
 
 function scenarioForOutput(s) {
@@ -118,12 +193,19 @@ function scenarioForOutput(s) {
     savingsPct: Number(s.savingsPct || 0),
     affectedRoutes: s.affectedRoutes || [],
     affectedCenters: s.affectedCenters || [],
+    currentDistributionMix: s.currentDistributionMix,
+    proposedDistributionMix: s.proposedDistributionMix,
+    distributionChange: s.distributionChange,
+    centersMovedDallasToWhitestown: s.centersMovedDallasToWhitestown || [],
+    centersMovedWhitestownToDallas: s.centersMovedWhitestownToDallas || [],
+    totalReassignmentSavings: Number(s.totalReassignmentSavings || 0),
+    proposedRouteGroups: s.proposedRouteGroups || [],
     operationalRisk: s.operationalRisk || '',
     confidence: s.confidence || 'Medium',
     formulaUsed: s.formulaUsed || '',
     contractRuleUsed: typeof s.contractRuleUsed === 'string' ? s.contractRuleUsed : JSON.stringify(s.contractRuleUsed || contractRules()),
     scheduleRuleUsed: s.scheduleRuleUsed || '',
-    finalStatus: s.savings > 0 ? 'Recommended' : 'Not Recommended'
+    finalStatus: s.finalStatus || (s.savings > 0 ? 'Recommended' : 'Not Recommended')
   };
 }
 
