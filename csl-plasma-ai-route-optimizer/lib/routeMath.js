@@ -329,3 +329,161 @@ export function validationRisks(routeGroup, proposed) {
   if (!routeGroup.weeklyCases) risks.push('Weekly case volume missing or zero.');
   return risks;
 }
+
+function scheduleKeyForStop(stop) {
+  const days = scheduleForStop(stop).map(x => `${x.day}:${x.value}`).sort().join('|') || 'unscheduled';
+  const week = [stop.weekPatternA ? 'A' : '', stop.weekPatternB ? 'B' : ''].filter(Boolean).join('/') || 'A/B';
+  return `${days}||${week}||${stop.pickupHours || ''}`;
+}
+function routeScheduleKey(stops) { return unique((stops || []).map(scheduleKeyForStop)).sort().join(' + '); }
+function routePallets(stops) { return sum((stops || []).map(s => s.weeklyCases)) / ASSUMPTIONS.casesPerPallet; }
+function routeCases(stops) { return sum((stops || []).map(s => s.weeklyCases)); }
+function routeEndpointForStops(stops, fallback='Dallas PLC') {
+  const counts = countBy((stops || []).map(routeEndpointForRecord));
+  return mostCommon(counts) || fallback;
+}
+function proposedRouteCost(route, roadFactor=1.18) {
+  const endpointPLC = route.endpointPLC || routeEndpointForStops(route.stops || []);
+  const legs = buildLegs({ stops: route.stops || [], destinationPLC: endpointPLC, origin: originForRouteName(route.routeName), roadFactor });
+  const cases = routeCases(route.stops);
+  const cost = calculateRateTableCost({ chargeableMiles: legs.chargeableMiles, weeklyCases: cases });
+  return { ...route, endpointPLC, cases: round(cases,2), pallets: round(cases / ASSUMPTIONS.casesPerPallet,2), legs, cost };
+}
+function currentNetworkBaseline(groups) {
+  return {
+    routeCount: groups.length,
+    stopCount: sum(groups.map(g => g.stopCount)),
+    chargedMiles: round(sum(groups.map(g => g.workbookMiles)),2),
+    fuel: round(sum(groups.map(g => g.workbookFuel)),2),
+    linehaul: round(sum(groups.map(g => g.workbookLinehaul)),2),
+    totalCost: round(sum(groups.map(g => g.workbookTotalCost)),2),
+    annualCost: round(sum(groups.map(g => g.workbookTotalCost))*52,2),
+    pallets: round(sum(groups.map(g => g.routePalletEstimate)),2),
+    cases: round(sum(groups.map(g => g.weeklyCases)),2)
+  };
+}
+function validateNetworkRoutes(routes) {
+  const risks = [];
+  let contractValid = true, scheduleValid = true, timeWindowValid = true, weekCadenceValid = true;
+  for (const route of routes) {
+    const schedules = unique((route.stops || []).map(scheduleKeyForStop));
+    if (route.requireSameSchedule !== false && schedules.length > 1) {
+      scheduleValid = false; weekCadenceValid = false; timeWindowValid = false;
+      risks.push(`${route.routeName}: mixed pickup day/time/Week A-B cadence; needs dispatch validation.`);
+    }
+    const changedEndpoint = (route.stops || []).some(s => routeEndpointForRecord(s) !== route.endpointPLC);
+    if (changedEndpoint) {
+      const eligible = (route.stops || []).every(s => String(s.routeType).toLowerCase() === 'relay' || s.plcChanged || s.basePLC !== s.actualPLC);
+      if (!eligible) { contractValid = false; risks.push(`${route.routeName}: PLC reassignment includes non-relay/non-mismatch centers.`); }
+    }
+    const pallets = routePallets(route.stops || []);
+    if (pallets > ASSUMPTIONS.palletWarningThreshold) risks.push(`${route.routeName}: ${round(pallets,1)} pallets exceeds ${ASSUMPTIONS.palletWarningThreshold}-pallet validation threshold.`);
+  }
+  return { contractValid, scheduleValid, timeWindowValid, weekCadenceValid, risks: unique(risks) };
+}
+function networkScenario({ id, scenarioType, description, groups, routes, roadFactor=1.18 }) {
+  const baseline = currentNetworkBaseline(groups);
+  const pricedRoutes = routes.map(r => proposedRouteCost(r, roadFactor));
+  const validation = validateNetworkRoutes(pricedRoutes);
+  const proposed = {
+    routeCount: pricedRoutes.length,
+    stopCount: sum(pricedRoutes.map(r => (r.stops || []).length)),
+    chargedMiles: round(sum(pricedRoutes.map(r => r.legs.chargeableMiles)),2),
+    fuel: round(sum(pricedRoutes.map(r => r.cost.fuel)),2),
+    linehaul: round(sum(pricedRoutes.map(r => r.cost.linehaul)),2),
+    totalCost: round(sum(pricedRoutes.map(r => r.cost.totalCost)),2),
+    annualCost: round(sum(pricedRoutes.map(r => r.cost.totalCost))*52,2),
+    pallets: round(sum(pricedRoutes.map(r => r.pallets)),2),
+    cases: round(sum(pricedRoutes.map(r => r.cases)),2)
+  };
+  const weeklySavingsRaw = round(baseline.totalCost - proposed.totalCost, 2);
+  const valid = validation.contractValid && validation.scheduleValid && validation.timeWindowValid && validation.weekCadenceValid;
+  const weeklySavings = valid && weeklySavingsRaw > 0 ? weeklySavingsRaw : 0;
+  const affectedRoutes = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.routeNameMckesson)).filter(Boolean));
+  const affectedCenters = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.centerNumber || s.id)).filter(Boolean));
+  return {
+    id, scenarioType, description,
+    currentNetworkCost: baseline.totalCost,
+    proposedNetworkCost: proposed.totalCost,
+    currentAnnualCost: baseline.annualCost,
+    proposedAnnualCost: proposed.annualCost,
+    savings: weeklySavings,
+    annualSavings: round(weeklySavings * 52, 2),
+    savingsPct: baseline.totalCost ? round((weeklySavings / baseline.totalCost) * 100, 2) : 0,
+    affectedRoutes,
+    affectedCenters,
+    operationalRisk: validation.risks.length ? validation.risks.join(' ') : 'No schedule/cadence/contract violations detected in deterministic screen; validate with McKesson before execution.',
+    confidence: valid ? (weeklySavings > 0 ? 'Medium' : 'Low') : 'Low',
+    validation,
+    baseline,
+    proposed,
+    routeCount: proposed.routeCount,
+    routes: pricedRoutes.map(r => ({ routeName: r.routeName, endpointPLC: r.endpointPLC, stopCount: (r.stops||[]).length, chargedMiles: r.legs.chargeableMiles, totalCost: r.cost.totalCost, scheduleKey: routeScheduleKey(r.stops), centers: (r.stops||[]).map(s => s.centerNumber || s.id) })),
+    formulaUsed: `weekly savings = current network weekly cost ${baseline.totalCost} - proposed network weekly cost ${proposed.totalCost}; annual savings = weekly savings × 52`,
+    contractRuleUsed: contractRules(),
+    scheduleRuleUsed: 'Network scenarios preserve each center pickup day, pickup time window, and Week A/B cadence unless flagged in operationalRisk.'
+  };
+}
+function currentRoutesFromGroups(groups) { return groups.map(g => ({ routeName: g.routeName, endpointPLC: g.currentEndpointPLC, stops: g.stops, requireSameSchedule: false })); }
+function clusterStops(stops, { prefix, endpointPLC, maxPallets=ASSUMPTIONS.palletWarningThreshold, requireSameSchedule=true }) {
+  const sorted = [...stops].sort((a,b)=>scheduleKeyForStop(a).localeCompare(scheduleKeyForStop(b)) || String(a.state).localeCompare(String(b.state)) || String(a.city).localeCompare(String(b.city)));
+  const routes=[]; let current=[]; let idx=1;
+  for (const stop of sorted) {
+    const nextPallets = routePallets([...current, stop]);
+    const sameSchedule = !current.length || scheduleKeyForStop(current[0]) === scheduleKeyForStop(stop);
+    if (current.length && (nextPallets > maxPallets || (requireSameSchedule && !sameSchedule))) {
+      routes.push({ routeName: `${prefix}-${idx++}`, endpointPLC, stops: current, requireSameSchedule }); current=[];
+    }
+    current.push(stop);
+  }
+  if (current.length) routes.push({ routeName: `${prefix}-${idx++}`, endpointPLC, stops: current, requireSameSchedule });
+  return routes;
+}
+function consolidationRoutes(groups, maxPallets=ASSUMPTIONS.palletWarningThreshold) {
+  const buckets = new Map();
+  for (const g of groups) {
+    const key = `${g.currentEndpointPLC}||${routeScheduleKey(g.stops)}`;
+    if (!buckets.has(key)) buckets.set(key, { endpointPLC: g.currentEndpointPLC, stops: [] });
+    buckets.get(key).stops.push(...g.stops);
+  }
+  return [...buckets.values()].flatMap((b,i)=>clusterStops(b.stops, { prefix:`CONSOLIDATED-${i+1}-${b.endpointPLC.includes('Dallas')?'DAL':'WHT'}`, endpointPLC:b.endpointPLC, maxPallets, requireSameSchedule:true }));
+}
+function splitRoutes(groups, maxPallets=ASSUMPTIONS.palletWarningThreshold) {
+  return groups.flatMap(g => routePallets(g.stops) > maxPallets || (g.workbookMiles / ASSUMPTIONS.defaultSpeedMph) > ASSUMPTIONS.driverHourLimit
+    ? clusterStops(g.stops, { prefix:`SPLIT-${g.routeKey}`, endpointPLC:g.currentEndpointPLC, maxPallets, requireSameSchedule:false })
+    : [{ routeName:g.routeName, endpointPLC:g.currentEndpointPLC, stops:g.stops, requireSameSchedule:false }]);
+}
+function eligiblePlcReassignmentRoutes(groups) {
+  return groups.map(g => {
+    const endpointPLC = (g.isRelay || g.plcMismatch) ? recommendedPLCForStops(g.stops) : g.currentEndpointPLC;
+    return { routeName:`${g.routeName}-${endpointPLC.includes('Dallas')?'DAL':'WHT'}`, endpointPLC, stops:g.stops, requireSameSchedule:false };
+  });
+}
+
+export function generateNetworkCandidates({ maxScenarios=20, roadFactor=1.18 } = {}) {
+  const groups = groupRouteRecords({ openOnly: true });
+  const scenarios = [];
+  const add = (scenarioType, description, routes, idx) => scenarios.push(networkScenario({ id:`${scenarioType}-${idx}`, scenarioType, description, groups, routes, roadFactor }));
+  [18,16,14,12].forEach((max, idx) => add('route consolidation', `Consolidate compatible routes across the full network by endpoint, pickup day/time, and Week A/B cadence at <=${max} pallets.`, consolidationRoutes(groups, max), idx+1));
+  [18,15,12].forEach((max, idx) => add('route splitting', `Split overloaded or long route groups network-wide at <=${max} pallets while preserving current PLC and schedule.`, splitRoutes(groups, max), idx+1));
+  add('PLC reassignment', 'Reassign only relay or Base/Actual mismatch routes to nearest/best PLC; all other routes remain at current PLC.', eligiblePlcReassignmentRoutes(groups), 1);
+  [18,15,12].forEach((max, idx) => add('PLC reassignment + consolidation', `Apply eligible PLC reassignment, then consolidate by endpoint and schedule at <=${max} pallets.`, consolidationRoutes(eligiblePlcReassignmentRoutes(groups).map(r => summarizeRouteGroup(r.routeName, r.stops.map(s => ({...s, actualPLC:r.endpointPLC, basePLC:r.endpointPLC})))), max), idx+1));
+  ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].forEach((day, idx) => {
+    const dayStops = groups.flatMap(g => g.stops.filter(s => scheduleForStop(s).some(x => x.day === day)));
+    if (dayStops.length) {
+      const routes = currentRoutesFromGroups(groups).filter(r => !(r.stops||[]).some(s => scheduleForStop(s).some(x => x.day === day)))
+        .concat(clusterStops(dayStops, { prefix:`DAY-BALANCE-${day.toUpperCase()}`, endpointPLC:routeEndpointForStops(dayStops), maxPallets:ASSUMPTIONS.palletWarningThreshold, requireSameSchedule:true }));
+      add('pickup-day balancing', `Balance all ${day} eligible pickups into schedule-compatible route clusters without moving centers to unscheduled days.`, routes, idx+1);
+    }
+  });
+  [10,12,14].forEach((min, idx) => {
+    const low = groups.filter(g => g.routePalletEstimate <= min);
+    const high = groups.filter(g => g.routePalletEstimate > min);
+    const routes = currentRoutesFromGroups(high).concat(consolidationRoutes(low, ASSUMPTIONS.palletWarningThreshold));
+    add('trailer utilization balancing', `Merge low-utilization routes at or below ${min} pallets by endpoint and schedule to improve 48 ft trailer utilization.`, routes, idx+1);
+  });
+  return scenarios
+    .filter(s => s.validation.contractValid && s.validation.scheduleValid && s.validation.timeWindowValid && s.validation.weekCadenceValid)
+    .sort((a,b)=>b.savings-a.savings || b.savingsPct-a.savingsPct)
+    .slice(0, Number(maxScenarios)||20);
+}

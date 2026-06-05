@@ -1,14 +1,28 @@
-import { generateDeterministicCandidates, groupRouteRecords, getRouteGroup, ASSUMPTIONS, contractRules } from './routeMath.js';
+import { generateNetworkCandidates, groupRouteRecords, ASSUMPTIONS, contractRules } from './routeMath.js';
 
-const STOP_SCHEMA = {
+const NETWORK_SCENARIO_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
-    id: { type: 'string' }, name: { type: 'string' }, centerNumber: { type: 'string' }, city: { type: 'string' }, state: { type: 'string' },
-    currentRoute: { type: 'string' }, proposedStop: { type: 'number' }, pickupDay: { type: 'string' }, pickupTimeWindow: { type: 'string' },
-    weekA: { type: 'string' }, weekB: { type: 'string' }, currentPLC: { type: 'string' }, cases: { type: 'number' }, pallets: { type: 'number' },
-    nonCslPickupDayFlag: { type: 'boolean' }
+    id: { type: 'string' },
+    scenarioType: { type: 'string' },
+    description: { type: 'string' },
+    currentNetworkCost: { type: 'number' },
+    proposedNetworkCost: { type: 'number' },
+    currentAnnualCost: { type: 'number' },
+    proposedAnnualCost: { type: 'number' },
+    savings: { type: 'number' },
+    annualSavings: { type: 'number' },
+    savingsPct: { type: 'number' },
+    affectedRoutes: { type: 'array', items: { type: 'string' } },
+    affectedCenters: { type: 'array', items: { type: 'string' } },
+    operationalRisk: { type: 'string' },
+    confidence: { type: 'string' },
+    formulaUsed: { type: 'string' },
+    contractRuleUsed: { type: 'string' },
+    scheduleRuleUsed: { type: 'string' },
+    finalStatus: { type: 'string', enum: ['Recommended','Not Recommended','Needs Contract Validation'] }
   },
-  required: ['id','name','centerNumber','city','state','currentRoute','proposedStop','pickupDay','pickupTimeWindow','weekA','weekB','currentPLC','cases','pallets','nonCslPickupDayFlag']
+  required: ['id','scenarioType','description','currentNetworkCost','proposedNetworkCost','currentAnnualCost','proposedAnnualCost','savings','annualSavings','savingsPct','affectedRoutes','affectedCenters','operationalRisk','confidence','formulaUsed','contractRuleUsed','scheduleRuleUsed','finalStatus']
 };
 
 const SCHEMA = {
@@ -19,58 +33,56 @@ const SCHEMA = {
     dataSource: { type: 'string' },
     calculationStatus: { type: 'string' },
     confidence: { type: 'string', enum: ['High','Medium','Low'] },
-    recommendations: { type: 'array', items: {
-      type: 'object', additionalProperties: false,
-      properties: {
-        recommendationType: { type: 'string' }, currentRoutesImpacted: { type: 'array', items: { type: 'string' } },
-        newRouteName: { type: 'string' }, currentPLC: { type: 'string' }, proposedPLC: { type: 'string' }, newPLC: { type: 'string' },
-        pickupDayTimeWindow: { type: 'string' }, weekAB: { type: 'string' }, stops: { type: 'array', items: STOP_SCHEMA },
-        currentChargeableMiles: { type: 'number' }, newChargeableMiles: { type: 'number' }, weeklyMilesSaved: { type: 'number' },
-        currentFuel: { type: 'number' }, newFuel: { type: 'number' }, currentCost: { type: 'number' }, newCost: { type: 'number' },
-        weeklySavings: { type: 'number' }, annualSavings: { type: 'number' }, formulaUsed: { type: 'string' }, contractRuleUsed: { type: 'string' },
-        scheduleRuleUsed: { type: 'string' }, reason: { type: 'string' }, risks: { type: 'array', items: { type: 'string' } },
-        confidence: { type: 'string' }, finalStatus: { type: 'string', enum: ['Recommended','Not Recommended','Needs Contract Validation'] }
-      },
-      required: ['recommendationType','currentRoutesImpacted','newRouteName','currentPLC','proposedPLC','newPLC','pickupDayTimeWindow','weekAB','stops','currentChargeableMiles','newChargeableMiles','weeklyMilesSaved','currentFuel','newFuel','currentCost','newCost','weeklySavings','annualSavings','formulaUsed','contractRuleUsed','scheduleRuleUsed','reason','risks','confidence','finalStatus']
-    }},
+    currentNetworkCost: { type: 'number' },
+    currentAnnualCost: { type: 'number' },
+    networkScenarios: { type: 'array', items: NETWORK_SCENARIO_SCHEMA },
+    recommendations: { type: 'array', items: NETWORK_SCENARIO_SCHEMA },
+    leadershipSummary: { type: 'string' },
     questionsForMcKesson: { type: 'array', items: { type: 'string' } }
   },
-  required: ['summary','scope','dataSource','calculationStatus','confidence','recommendations','questionsForMcKesson']
+  required: ['summary','scope','dataSource','calculationStatus','confidence','currentNetworkCost','currentAnnualCost','networkScenarios','recommendations','leadershipSummary','questionsForMcKesson']
 };
 
 export async function runAiRouteOptimizer(input) {
-  const { scope='all', routeName='', question='', objective='savings', maxRoutes=12 } = input || {};
-  const candidates = generateDeterministicCandidates({ scope, routeName, objective, maxRoutes });
-  const groups = scope === 'selected' && routeName ? [getRouteGroup(routeName)].filter(Boolean) : groupRouteRecords({ openOnly: true }).slice(0, Number(maxRoutes)||12);
+  const { question='', objective='savings', maxRoutes=20 } = input || {};
+  const networkScenarios = generateNetworkCandidates({ maxScenarios: 20 });
+  const groups = groupRouteRecords({ openOnly: true });
+  const currentNetworkCost = networkScenarios[0]?.currentNetworkCost || groups.reduce((a,g)=>a+(Number(g.workbookTotalCost)||0),0);
+  const currentAnnualCost = currentNetworkCost * 52;
 
   if (!process.env.OPENAI_API_KEY) {
-    return fallbackResult({ scope, candidates, reason: 'OPENAI_API_KEY is not configured. Returning deterministic contract-aware route calculator output.' });
+    return fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason: 'OPENAI_API_KEY is not configured. Returning deterministic network-wide optimizer scenarios.' });
   }
 
   const payload = {
     userQuestion: question,
     objective,
+    scope: 'network-wide McKesson plasma pickup network',
     contractLogic: contractRules(),
     assumptions: ASSUMPTIONS,
     hardRules: [
-      'Optimize only within current McKesson contract rules and plasma center pickup schedule.',
-      'Do not treat each center as its own shipment; centers are stops inside a route group.',
-      'Charge begins at first pickup; deadhead/origin miles are tracked but not charged unless contract logic says otherwise.',
-      'Use Rate Table linehaul, fuel surcharge, workbook accessorials when present, 48 ft refrigerated trailer, and 70 cases = 1 pallet.',
-      'Do not move a center to a day it is not scheduled for, do not mix Week A/B cadence incorrectly, and do not violate pickup time windows.',
-      'Do not recommend a PLC switch unless route eligibility is true (current PLC retained, relay route, or Base/Actual PLC mismatch).',
-      'Do not label savings unless proposed total contract cost is lower than current total contract cost.',
-      'Use actual truck-valid miles for 48 ft refrigerated trailer when available; otherwise label miles as estimated only.'
+      'Optimize the entire McKesson plasma center transportation network simultaneously; do not optimize one route at a time.',
+      'Generate and rank candidate transportation networks: consolidation, splitting, stop reassignment, PLC reassignment, merging, pickup-day balancing, and trailer utilization balancing.',
+      'Validate contract rules, pickup schedules, Week A/B cadence, and pickup time windows for every candidate network.',
+      'Do not move a center to a day it is not scheduled for or mix Week A and Week B incorrectly.',
+      'Do not recommend PLC switch unless the route/centers are eligible under the supplied contract/screening logic.',
+      'Do not count deadhead as savings unless the contract says deadhead is charged.',
+      'Rank the top 20 scenarios by proven network savings; no savings label unless proposed total network contract cost is lower than current total network contract cost.',
+      'Use truck-valid miles when available; otherwise label mileage as estimated.'
     ],
-    routeGroups: groups.map(g => ({
-      routeName: g.routeName, stopCount: g.stopCount, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType,
-      weeklyCases: g.weeklyCases, routePalletEstimate: g.routePalletEstimate, palletCalculationBasis: g.palletCalculationBasis,
-      currentRoutePathMiles: g.workbookMiles, workbookAllocatedMiles: g.workbookAllocatedMiles,
-      workbookLinehaul: g.workbookLinehaul, workbookFuel: g.workbookFuel, workbookTotalCost: g.workbookTotalCost,
-      isRelay: g.isRelay, plcMismatch: g.plcMismatch, pickupDays: g.pickupDays, weekPatterns: g.weekPatterns, schedule: g.schedule,
-      stops: g.stops.map((s,i)=>({ stop:i+1, id:s.id, name:s.routeName, centerNumber:s.centerNumber, city:s.city, state:s.state, basePLC:s.basePLC, actualPLC:s.actualPLC, pickupHours:s.pickupHours, weekA:s.weekPatternA||'', weekB:s.weekPatternB||'', pickupDays:s.pickupDays||{} }))
-    })),
-    preCalculatedCandidates: candidates.slice(0, 12)
+    currentNetwork: {
+      routeCount: groups.length,
+      stopCount: groups.reduce((a,g)=>a+g.stopCount,0),
+      weeklyCost: currentNetworkCost,
+      annualCost: currentAnnualCost,
+      routeGroups: groups.map(g => ({
+        routeName: g.routeName, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType, stopCount: g.stopCount,
+        weeklyCases: g.weeklyCases, routePalletEstimate: g.routePalletEstimate, currentRoutePathMiles: g.workbookMiles,
+        workbookFuel: g.workbookFuel, workbookTotalCost: g.workbookTotalCost, isRelay: g.isRelay, plcMismatch: g.plcMismatch,
+        pickupDays: g.pickupDays, weekPatterns: g.weekPatterns, schedule: g.schedule
+      }))
+    },
+    preCalculatedNetworkScenarios: networkScenarios.slice(0, Number(maxRoutes)||20)
   };
 
   const res = await fetch('https://api.openai.com/v1/responses', {
@@ -79,58 +91,60 @@ export async function runAiRouteOptimizer(input) {
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL || 'gpt-5.5',
       input: [
-        { role: 'system', content: 'You are a contract-aware cold-chain transportation optimization analyst. Identify route patterns, suggest only contract/schedule-feasible route rebuilds, prove savings with formulas, flag risks, and return only valid JSON that matches the schema.' },
+        { role: 'system', content: 'You are a network-wide McKesson cold-chain transportation optimizer. Analyze the full plasma pickup network, not individual routes. Return only valid JSON matching the schema.' },
         { role: 'user', content: JSON.stringify(payload) }
       ],
-      text: { format: { type: 'json_schema', name: 'route_optimizer_result', strict: true, schema: SCHEMA } }
+      text: { format: { type: 'json_schema', name: 'network_optimizer_result', strict: true, schema: SCHEMA } }
     })
   });
   const data = await res.json();
-  if (!res.ok) return fallbackResult({ scope, candidates, reason: `OpenAI API failed: ${data.error?.message || res.status}` });
+  if (!res.ok) return fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason: `OpenAI API failed: ${data.error?.message || res.status}` });
   const text = data.output_text || data.output?.flatMap(o=>o.content||[]).map(c=>c.text||'').join('') || '';
   try { return JSON.parse(text); }
-  catch { return fallbackResult({ scope, candidates, reason: 'OpenAI returned non-JSON. Returning deterministic contract-aware candidates.' }); }
+  catch { return fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason: 'OpenAI returned non-JSON. Returning deterministic network-wide scenarios.' }); }
 }
 
-function fallbackResult({ scope, candidates, reason }) {
+function scenarioForOutput(s) {
   return {
-    summary: 'Contract-aware route optimization candidates generated from Excel-derived route data, current pickup schedule, McKesson contract assumptions, and deterministic route calculator.',
-    scope,
-    dataSource: 'Embedded Excel-derived route data + Rate Table assumptions + deterministic contract-aware route calculator',
+    id: s.id,
+    scenarioType: s.scenarioType,
+    description: s.description,
+    currentNetworkCost: Number(s.currentNetworkCost || 0),
+    proposedNetworkCost: Number(s.proposedNetworkCost || 0),
+    currentAnnualCost: Number(s.currentAnnualCost || 0),
+    proposedAnnualCost: Number(s.proposedAnnualCost || 0),
+    savings: Number(s.savings || 0),
+    annualSavings: Number(s.annualSavings || 0),
+    savingsPct: Number(s.savingsPct || 0),
+    affectedRoutes: s.affectedRoutes || [],
+    affectedCenters: s.affectedCenters || [],
+    operationalRisk: s.operationalRisk || '',
+    confidence: s.confidence || 'Medium',
+    formulaUsed: s.formulaUsed || '',
+    contractRuleUsed: typeof s.contractRuleUsed === 'string' ? s.contractRuleUsed : JSON.stringify(s.contractRuleUsed || contractRules()),
+    scheduleRuleUsed: s.scheduleRuleUsed || '',
+    finalStatus: s.savings > 0 ? 'Recommended' : 'Not Recommended'
+  };
+}
+
+function fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason }) {
+  const scenarios = networkScenarios.slice(0, 20).map(scenarioForOutput);
+  return {
+    summary: 'Network-wide McKesson optimizer generated candidate transportation networks across all open plasma centers.',
+    scope: 'network-wide',
+    dataSource: 'Embedded Excel-derived route data + Rate Table assumptions + deterministic network-wide optimizer',
     calculationStatus: reason,
     confidence: 'Medium',
-    recommendations: candidates.slice(0, 8).map(c => ({
-      recommendationType: c.recommendationType,
-      currentRoutesImpacted: c.currentRoutesImpacted,
-      newRouteName: c.newRouteName,
-      currentPLC: c.currentPLC || '',
-      proposedPLC: c.proposedPLC || c.newPLC || '',
-      newPLC: c.newPLC,
-      pickupDayTimeWindow: c.pickupDayTimeWindow || '',
-      weekAB: c.weekAB || '',
-      stops: c.stops || [],
-      currentChargeableMiles: Number(c.currentChargeableMiles || 0),
-      newChargeableMiles: Number(c.newChargeableMiles || 0),
-      weeklyMilesSaved: Number(c.weeklyMilesSaved || 0),
-      currentFuel: Number(c.currentFuel || 0),
-      newFuel: Number(c.newFuel || 0),
-      currentCost: Number(c.currentCost || 0),
-      newCost: Number(c.newCost || 0),
-      weeklySavings: Number(c.weeklySavings || 0),
-      annualSavings: Number(c.annualSavings || 0),
-      formulaUsed: c.formulaUsed || '',
-      contractRuleUsed: c.contractRuleUsed || '',
-      scheduleRuleUsed: c.scheduleRuleUsed || '',
-      reason: c.reason,
-      risks: c.risks || [],
-      confidence: c.confidence || 'Medium',
-      finalStatus: c.finalStatus || 'Needs Contract Validation'
-    })),
+    currentNetworkCost: Number(currentNetworkCost || 0),
+    currentAnnualCost: Number(currentAnnualCost || 0),
+    networkScenarios: scenarios,
+    recommendations: scenarios,
+    leadershipSummary: `Top ${scenarios.length} network scenarios compare current total network cost against proposed total network cost across consolidation, splitting, PLC reassignment, pickup-day balancing, and trailer-utilization balancing.` ,
     questionsForMcKesson: [
       'Confirm whether any deadhead, toll, detention, layover, stop, accessorial, or special-handling charges apply beyond the loaded Rate Table/workbook data.',
-      'Confirm route eligibility before switching any center or route endpoint PLC.',
-      'Confirm proposed rebuilds preserve pickup windows and Week A / Week B cadence.',
-      'Confirm the proposed PLC can receive the expected weekly pallet/case volume.'
+      'Confirm route/center eligibility before any PLC reassignment.',
+      'Confirm proposed network scenarios preserve pickup windows and Week A / Week B cadence.',
+      'Confirm PLC receiving capacity and route staffing for any consolidated or merged network scenario.'
     ]
   };
 }

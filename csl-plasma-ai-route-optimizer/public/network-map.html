@@ -383,11 +383,11 @@ body.optimization-active aside{padding-bottom:34px;}
 
       <div class="ai-optimizer-card">
         <h2>AI Route Rebuild Agent</h2>
-        <div><b>Purpose:</b> AI reviews all current route groups from the Excel-derived data, proposes route regrouping, calls backend route calculations, and returns new route names, stops, miles, fuel, cost, risks, and confidence.</div>
-        <textarea id="aiOptimizerQuestion" class="ai-question" placeholder="Example: Review all relay routes and suggest if any stops should be regrouped to reduce chargeable miles and fuel."></textarea>
+        <div><b>Purpose:</b> AI reviews the entire McKesson plasma pickup network at once, generates candidate transportation networks, validates contract/schedule constraints, and ranks the top scenarios by total network savings.</div>
+        <textarea id="aiOptimizerQuestion" class="ai-question" placeholder="Example: Generate network-wide scenarios for route consolidation, splitting, PLC reassignment, pickup-day balancing, and trailer utilization balancing."></textarea>
         <div class="ai-buttons">
-          <button class="action primary" id="aiAnalyzeSelectedRoute" type="button">Analyze Selected Route</button>
-          <button class="action primary" id="aiAnalyzeAllRoutes" type="button">AI Analyze All Routes</button>
+          <button class="action primary" id="aiAnalyzeSelectedRoute" type="button">Analyze Network</button>
+          <button class="action primary" id="aiAnalyzeAllRoutes" type="button">AI Rank Top 20 Networks</button>
           <button class="action" id="aiRelayRoutes" type="button">AI Review Relays</button>
         </div>
         <div id="aiOptimizerOutput" class="ai-output"><div class="ai-title">AI output will show here.</div>Select a route or analyze all routes. The API key stays on the server.</div>
@@ -3225,32 +3225,29 @@ refresh();
   function htmlEscape(value){ return String(value ?? '').replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
   function renderAiResult(result){
     if(!result){ setAiOutput('<div class="ai-title">No result returned.</div>'); return; }
-    const recs = result.recommendations || [];
-    const cards = recs.map((r, idx) => `
+    const scenarios = result.networkScenarios || result.recommendations || [];
+    const cards = scenarios.map((r, idx) => `
       <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:8px">
-        <div class="ai-title">${idx+1}. ${htmlEscape(r.newRouteName || r.recommendationType || 'Recommendation')}</div>
-        <div><b>Action:</b> ${htmlEscape(r.recommendationType || '')}</div>
-        <div><b>Impacted current routes:</b> ${htmlEscape((r.currentRoutesImpacted||[]).join(', '))}</div>
-        <div><b>Current PLC:</b> ${htmlEscape(r.currentPLC || '')} | <b>Proposed PLC:</b> ${htmlEscape(r.proposedPLC || r.newPLC || '')}</div>
-        <div><b>Pickup day/time window:</b> ${htmlEscape(r.pickupDayTimeWindow || '')}</div>
-        <div><b>Week A / Week B:</b> ${htmlEscape(r.weekAB || '')}</div>
-        <div><b>Affected centers:</b> ${htmlEscape((r.stops||[]).map(s => `${s.name || s.routeName || s.id || s}${s.pickupDay ? ' [' + s.pickupDay + ']' : ''}`).join(' → '))}</div>
-        <div><b>Miles:</b> current ${Number(r.currentChargeableMiles||0).toLocaleString()} → proposed ${Number(r.newChargeableMiles||0).toLocaleString()}</div>
-        <div><b>Contract cost:</b> current $${Number(r.currentCost||0).toLocaleString(undefined,{maximumFractionDigits:0})} → proposed $${Number(r.newCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-        <div><b>Weekly savings:</b> $${Number(r.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div class="ai-title">${idx+1}. ${htmlEscape(r.scenarioType || r.newRouteName || r.recommendationType || 'Network Scenario')}</div>
+        <div><b>Status:</b> ${htmlEscape(r.finalStatus || '')} | <b>Confidence:</b> ${htmlEscape(r.confidence || result.confidence || '')}</div>
+        <div><b>Description:</b> ${htmlEscape(r.description || r.reason || '')}</div>
+        <div><b>Current network cost:</b> $${Number(r.currentNetworkCost ?? r.currentCost ?? 0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Proposed network cost:</b> $${Number(r.proposedNetworkCost ?? r.newCost ?? 0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div><b>Savings:</b> $${Number(r.savings ?? r.weeklySavings ?? 0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk (${Number(r.savingsPct || 0).toLocaleString(undefined,{maximumFractionDigits:1})}%) | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div><b>Affected routes:</b> ${htmlEscape((r.affectedRoutes || r.currentRoutesImpacted || []).slice(0,25).join(', '))}${(r.affectedRoutes||[]).length>25?' …':''}</div>
+        <div><b>Affected centers:</b> ${htmlEscape((r.affectedCenters || (r.stops||[]).map(s=>s.centerNumber||s.id)).slice(0,40).join(', '))}${(r.affectedCenters||[]).length>40?' …':''}</div>
         <div><b>Formula:</b> ${htmlEscape(r.formulaUsed || '')}</div>
-        <div><b>Contract rule:</b> ${htmlEscape(r.contractRuleUsed || '')}</div>
-        <div><b>Schedule rule:</b> ${htmlEscape(r.scheduleRuleUsed || '')}</div>
-        <div><b>Reason:</b> ${htmlEscape(r.reason || '')}</div>
-        <div><b>Risks:</b> ${htmlEscape((r.risks||[]).join('; '))}</div>
-        <div><b>Confidence:</b> ${htmlEscape(r.confidence || result.confidence || '')} | <b>Final status:</b> ${htmlEscape(r.finalStatus || '')}</div>
+        <div><b>Contract validation:</b> ${htmlEscape(r.contractRuleUsed || '')}</div>
+        <div><b>Schedule validation:</b> ${htmlEscape(r.scheduleRuleUsed || '')}</div>
+        <div><b>Operational risk:</b> ${htmlEscape(r.operationalRisk || (r.risks||[]).join('; ') || '')}</div>
       </div>`).join('');
     setAiOutput(`
-      <div class="ai-title">${htmlEscape(result.summary || 'AI Route Optimization Result')}</div>
-      <div><b>Scope:</b> ${htmlEscape(result.scope || '')}</div>
+      <div class="ai-title">${htmlEscape(result.summary || 'Network-wide AI Route Optimization Result')}</div>
+      <div><b>Scope:</b> ${htmlEscape(result.scope || 'network-wide')}</div>
+      <div><b>Current network cost:</b> $${Number(result.currentNetworkCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}/wk | <b>Annual:</b> $${Number(result.currentAnnualCost||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
       <div><b>Data source:</b> ${htmlEscape(result.dataSource || 'Excel-derived route data + backend route calculator')}</div>
       <div><b>Calculation status:</b> ${htmlEscape(result.calculationStatus || '')}</div>
-      ${cards || '<div>No recommendations returned.</div>'}
+      <div><b>Leadership summary:</b> ${htmlEscape(result.leadershipSummary || '')}</div>
+      ${cards || '<div>No network scenarios returned.</div>'}
       <div style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:8px"><b>Questions for McKesson:</b><br>${htmlEscape((result.questionsForMcKesson||[]).join('\n'))}</div>
     `);
   }
