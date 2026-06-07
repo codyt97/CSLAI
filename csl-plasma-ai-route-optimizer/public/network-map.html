@@ -162,6 +162,16 @@
     body.optimization-active #plcSummary, body.optimization-active aside>.legend, body.optimization-active #optExecutiveSummarySection{display:none!important}
     #optMainDashboard,#optMainActionBar{display:none}
     body.optimization-active #optMainDashboard{display:block;padding:12px 14px;background:#f8fafc;border-bottom:1px solid var(--border);overflow:hidden}
+    #aiNetworkDashboard,#aiNetworkActionBar{display:none}
+    body.ai-network-active #aiNetworkDashboard{display:block;padding:12px 14px;background:#f8fafc;border-bottom:1px solid var(--border);overflow:hidden}
+    body.ai-network-active #aiNetworkActionBar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--border)}
+    body.ai-network-active #map{min-height:360px;height:360px}
+    body.ai-network-active .footer-panel{max-height:44vh;overflow:auto;background:#f8fafc}
+    .ai-network-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+    .ai-rec-card{border:1px solid #e2e8f0;background:#fff;border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+    .ai-rec-card h3{margin:0 0 8px;font-size:14px;font-weight:950;color:#0f172a}.ai-rec-card p{white-space:normal;overflow-wrap:anywhere}
+    .ai-proof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px}
+    .ai-proof-grid div{border:1px solid #f1f5f9;background:#f8fafc;border-radius:10px;padding:8px}.ai-proof-grid span{display:block;font-size:10px;color:#64748b;font-weight:900;text-transform:uppercase}.ai-proof-grid b{font-size:14px;color:#0f172a}
     body.optimization-active #optMainActionBar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--border)}
     #optMainDashboard .opt-exec-section,#optMainDashboard .ai-optimizer-card{max-width:100%;margin:0 0 10px}
     #optMainDashboard .opt-exec-kpi b,#optMainDashboard .opt-story-flow b{overflow-wrap:anywhere;white-space:normal}
@@ -546,6 +556,39 @@ body.optimization-active aside{padding-bottom:34px;}
       </details>
     </div>
 
+    <div id="aiNetworkPanel" class="view-panel hidden">
+      <div class="notice"><b>AI Network Optimizer:</b> guided business workflow for redesigning the full plasma transportation network. Deterministic contract math proves savings.</div>
+      <div class="controls">
+        <div>
+          <label for="aiNetworkObjective">Scenario Objective</label>
+          <select id="aiNetworkObjective">
+            <option value="savings">Lowest total cost</option>
+            <option value="miles">Lowest miles</option>
+            <option value="balanced">Balanced</option>
+            <option value="utilization">Max trailer utilization</option>
+          </select>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" id="aiIncludePlcReassignment" checked /> Include PLC reassignment</label>
+          <label><input type="checkbox" id="aiIncludeRouteMerge" checked /> Include route merge</label>
+          <label><input type="checkbox" id="aiIncludeRouteSplit" checked /> Include route split</label>
+          <label><input type="checkbox" id="aiIncludePickupDayBalancing" checked /> Include pickup-day balancing</label>
+        </div>
+        <div>
+          <label for="aiNetworkMapMode">AI Route Group Map</label>
+          <select id="aiNetworkMapMode"><option value="current">Current network</option><option value="proposed">Proposed AI network</option><option value="difference">Difference view</option></select>
+        </div>
+      </div>
+      <details class="opt-collapsible">
+        <summary>ⓘ Methodology / Assumptions</summary>
+        <ul class="opt-methodology-list">
+          <li>AI may suggest route groups; deterministic contract math proves current/proposed costs and savings.</li>
+          <li>Final annual savings are only shown when coverage, contract rules, schedule data, pickup windows, and mileage are validation-ready.</li>
+          <li>Otherwise savings are labeled estimated and require validation.</li>
+        </ul>
+      </details>
+    </div>
+
     <div class="legend">
       <h2>PLC Color Legend</h2>
       <div class="legend-item"><span class="dot" style="background:#2563eb"></span> Dallas PLC</div>
@@ -557,7 +600,7 @@ body.optimization-active aside{padding-bottom:34px;}
   <main>
     <div class="topbar">
       <div>
-        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button></div>
+        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiNetwork" type="button">AI Network Optimizer</button></div>
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
@@ -570,6 +613,14 @@ body.optimization-active aside{padding-bottom:34px;}
       <span class="opt-action-spacer"></span>
       <button class="action" id="optTopExport" type="button">Export CSV</button>
       <button class="action" id="optFullscreenMap" type="button">Fullscreen Map</button>
+    </div>
+    <div id="aiNetworkDashboard" aria-label="AI Network Optimizer dashboard"></div>
+    <div id="aiNetworkActionBar" aria-label="AI Network Optimizer action bar">
+      <button class="action primary" id="aiRunNetworkOptimization" type="button">Run AI Network Optimization</button>
+      <button class="action" id="aiExportSummary" type="button">Export AI Summary</button>
+      <button class="action" id="aiExportProof" type="button">Export Savings Proof</button>
+      <button class="action" id="aiExportMovedCenters" type="button">Export Centers Reassigned</button>
+      <button class="action" id="aiExportExcludedCenters" type="button">Export Excluded Centers</button>
     </div>
     <div id="map"></div>
     <div class="footer-panel">
@@ -2354,10 +2405,12 @@ function setView(view){
   $('tabSchedule').classList.toggle('active', view==='schedule');
   if($('tabPlayground')) $('tabPlayground').classList.toggle('active', view==='playground');
   if($('tabOptimization')) $('tabOptimization').classList.toggle('active', view==='optimization');
+  if($('tabAiNetwork')) $('tabAiNetwork').classList.toggle('active', view==='aiNetwork');
   $('plcPanel').classList.toggle('hidden', view!=='plc');
   $('routePanel').classList.toggle('hidden', view!=='schedule');
   if($('playgroundPanel')) $('playgroundPanel').classList.toggle('hidden', view!=='playground');
   if($('optimizationPanel')) $('optimizationPanel').classList.toggle('hidden', view!=='optimization');
+  if($('aiNetworkPanel')) $('aiNetworkPanel').classList.toggle('hidden', view!=='aiNetwork');
   refresh();
 }
 populateFilters();
@@ -2376,6 +2429,7 @@ $('tabPlc').addEventListener('click', ()=>setView('plc'));
 $('tabSchedule').addEventListener('click', ()=>setView('schedule'));
 if($('tabPlayground')) $('tabPlayground').addEventListener('click', ()=>setView('playground'));
 if($('tabOptimization')) $('tabOptimization').addEventListener('click', ()=>setView('optimization'));
+if($('tabAiNetwork')) $('tabAiNetwork').addEventListener('click', ()=>setView('aiNetwork'));
 ['scenarioPricingMethod','scenarioFuelRate','scenarioLinehaulRate','scenarioWeightTier','scenarioIncludeReturn','scenarioTollPreference','scenarioShowLines','scenarioShowCurrentLines','scenarioOpenOnly'].forEach(id => { if($(id)) $(id).addEventListener('change', refreshPlayground); });
 if($('scenarioOpenOnly')) $('scenarioOpenOnly').addEventListener('change', populateScenarioControls);
 if($('scenarioAddUpdate')) $('scenarioAddUpdate').addEventListener('click', addScenarioAssignments);
@@ -2404,6 +2458,7 @@ if($('geoapifyApiKey')){
   setView = function(view){
     originalSetView(view);
     document.body.classList.toggle('optimization-active', view === 'optimization');
+    document.body.classList.toggle('ai-network-active', view === 'aiNetwork');
     installOptimizationMainLayout();
     updateOptimizationLoadHelper();
   };
@@ -3630,6 +3685,138 @@ refresh();
   const b1=$('aiAnalyzeSelectedRoute'); if(b1) b1.addEventListener('click',()=>callAi('selected'));
   const b2=$('aiAnalyzeAllRoutes'); if(b2) b2.addEventListener('click',()=>callAi('all'));
   const b3=$('aiRelayRoutes'); if(b3) b3.addEventListener('click',()=>{ const q=$('aiOptimizerQuestion'); if(q) q.value='Review Allentown, Buffalo, and Philly relay routes. Suggest whether full route moves, stop regrouping, or validation-only action is best based on chargeable miles, fuel, and risk.'; callAi('relay'); });
+})();
+
+(function initAiNetworkOptimizerTab(){
+  function $(id){ return document.getElementById(id); }
+  function esc(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function fmtMoney(v){ return '$' + Number(v||0).toLocaleString(undefined,{maximumFractionDigits:0}); }
+  function pct(n,d){ return d ? (Number(n||0)/Number(d||0))*100 : 0; }
+  function openCenters(){ return (DATA.records||[]).filter(r => String(r.centerStatus||'').toUpperCase()==='OPEN'); }
+  function pickupDaysPresent(r){ return ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].some(d => String(r[d] || r.pickupDays?.[d] || '').trim()); }
+  function includedRows(){ try { return typeof buildRouteOptimizationPlans === 'function' ? buildRouteOptimizationPlans() : []; } catch { return []; } }
+  function coverage(rows){
+    const included = new Set(); (rows||[]).forEach(r => (r.stops||[]).forEach(s => included.add(String(s.id))));
+    const excluded = openCenters().filter(r => !included.has(String(r.id))).map(r => {
+      const missing=[]; const reasons=[]; const route=getRouteName(r); const plc=endpointPLCFor(r);
+      if(!route || route==='#N/A' || route==='Unknown Route'){ reasons.push('Missing Route Name'); missing.push('Route Name'); }
+      if(!plc || plc==='#N/A'){ reasons.push('Missing PLC Assignment'); missing.push('PLC'); }
+      if(!r.hasCoords){ reasons.push('Missing Latitude/Longitude'); missing.push('Latitude/Longitude'); }
+      if(!pickupDaysPresent(r)){ reasons.push('Missing Pickup Day'); missing.push('Pickup Day'); }
+      if(!r.weekPatternA && !r.weekPatternB){ reasons.push('Missing Week A / Week B Schedule'); missing.push('Week A / Week B'); }
+      if(!(Number(r.weeklyCases)>0)){ reasons.push('Missing Cases/Pallet Data'); missing.push('Weekly Cases'); }
+      if(!(Number(r.weeklyMiles)>0)){ reasons.push('Missing Mileage Data'); missing.push('Weekly Miles'); }
+      if(!(Number(r.totalRouteCost)>0)){ reasons.push('Missing Cost Data'); missing.push('Weekly Cost'); }
+      if(!reasons.length) reasons.push('Filtered Out by User Settings');
+      return {centerName:r.routeName||'', city:r.city||'', state:r.state||'', currentPLC:plc||'', routeName:route||'', reasons, missing, raw:r};
+    });
+    return {open:openCenters().length, included:included.size, excluded, pct:pct(included.size, openCenters().length)};
+  }
+  function distribution(rows, proposed=false){
+    const seen=new Set(); const d={Dallas:0,Whitestown:0};
+    (rows||[]).forEach(row => (row.stops||[]).forEach(stop => {
+      if(seen.has(String(stop.id))) return; seen.add(String(stop.id));
+      let plc = endpointPLCFor(stop);
+      if(proposed){ const seg=(row.segments||[]).find(s => (s.stops||[]).some(x=>String(x.id)===String(stop.id))); plc = seg?.newPLC || row.recommendedPLC || plc; }
+      String(plc||'').toLowerCase().includes('whitestown') ? d.Whitestown++ : d.Dallas++;
+    }));
+    const total=d.Dallas+d.Whitestown; return {...d, total, dallasPct:pct(d.Dallas,total), whitePct:pct(d.Whitestown,total)};
+  }
+  function movements(rows){
+    const seen=new Set(); let d2w=0,w2d=0,changed=0;
+    (rows||[]).forEach(row => (row.stops||[]).forEach(stop => {
+      if(seen.has(String(stop.id))) return; seen.add(String(stop.id));
+      const current=String(endpointPLCFor(stop)||'').toLowerCase().includes('whitestown')?'Whitestown':'Dallas';
+      const seg=(row.segments||[]).find(s => (s.stops||[]).some(x=>String(x.id)===String(stop.id)));
+      const prop=String(seg?.newPLC || row.recommendedPLC || endpointPLCFor(stop)||'').toLowerCase().includes('whitestown')?'Whitestown':'Dallas';
+      if(current!==prop){ changed++; if(current==='Dallas') d2w++; else w2d++; }
+    })); return {d2w,w2d,changed};
+  }
+  function savingsLabel(cov, rows){
+    const missingSchedule = openCenters().some(r => !pickupDaysPresent(r) || (!r.weekPatternA && !r.weekPatternB) || !r.pickupHours);
+    const missingMiles = openCenters().some(r => !(Number(r.weeklyMiles)>0));
+    const status = cov.excluded.length || missingSchedule || missingMiles ? 'Estimated savings — requires validation' : 'Final annual savings';
+    return {status, valid: status === 'Final annual savings'};
+  }
+  function scenarioAllowed(s){
+    const t=String(s?.scenarioType || s?.description || '').toLowerCase();
+    if(!$('aiIncludePlcReassignment')?.checked && t.includes('plc')) return false;
+    if(!$('aiIncludeRouteMerge')?.checked && (t.includes('merge') || t.includes('consolidation'))) return false;
+    if(!$('aiIncludeRouteSplit')?.checked && t.includes('split')) return false;
+    if(!$('aiIncludePickupDayBalancing')?.checked && t.includes('pickup-day')) return false;
+    return true;
+  }
+  function selectedRecommendations(result){ return (result?.networkScenarios || result?.recommendations || []).filter(scenarioAllowed); }
+  function baselineHtml(rows){
+    const cov=coverage(rows), curr=distribution(rows,false), prop=distribution(rows,true), mov=movements(rows);
+    const currentCost=rows.reduce((a,r)=>a+Number(r.currentTotal||0),0);
+    const proposedCost=rows.reduce((a,r)=>a+Number(r.newTotal||0),0);
+    const weekly=Math.max(0,currentCost-proposedCost), annual=weekly*52;
+    const label=savingsLabel(cov, rows);
+    return `<section class="opt-exec-section"><div class="opt-section-eyebrow">1. Baseline</div><h2>Network Baseline</h2><div class="ai-network-grid">
+      <div class="opt-exec-kpi"><span>Open plasma centers</span><b>${cov.open}</b></div><div class="opt-exec-kpi"><span>Centers included</span><b>${cov.included}</b></div><div class="opt-exec-kpi"><span>Centers excluded</span><b>${cov.excluded.length}</b></div><div class="opt-exec-kpi"><span>Current Dallas %</span><b>${curr.dallasPct.toFixed(1)}%</b></div><div class="opt-exec-kpi"><span>Current Whitestown %</span><b>${curr.whitePct.toFixed(1)}%</b></div><div class="opt-exec-kpi"><span>Current weekly cost</span><b>${fmtMoney(currentCost)}</b></div><div class="opt-exec-kpi"><span>Current annual cost</span><b>${fmtMoney(currentCost*52)}</b></div><div class="opt-exec-kpi savings"><span>${label.status}</span><b>${fmtMoney(annual)}</b></div>
+    </div><div class="coverage-warning">Optimization uses <b>${cov.included}</b> of <b>${cov.open}</b> open centers. <b>${cov.excluded.length}</b> centers are excluded and need documented validation before savings are final.</div></section>
+    <section class="opt-exec-section"><div class="opt-section-eyebrow">Distribution Change</div><h2>Dallas vs Whitestown</h2><div class="ai-network-grid"><div class="opt-exec-kpi"><span>Proposed Dallas %</span><b>${prop.dallasPct.toFixed(1)}%</b></div><div class="opt-exec-kpi"><span>Proposed Whitestown %</span><b>${prop.whitePct.toFixed(1)}%</b></div><div class="opt-exec-kpi"><span>Dallas → Whitestown</span><b>${mov.d2w}</b></div><div class="opt-exec-kpi"><span>Whitestown → Dallas</span><b>${mov.w2d}</b></div><div class="opt-exec-kpi"><span>Net change</span><b>${mov.d2w-mov.w2d >= 0 ? '+' : ''}${mov.d2w-mov.w2d} to Whitestown</b></div></div></section>`;
+  }
+  function scenarioOptionsHtml(){
+    return `<section class="opt-exec-section"><div class="opt-section-eyebrow">2. Build AI Scenario</div><h2>Scenario Options</h2><div class="mini-note">Functional options: objective, PLC reassignment, route merge, route split, and pickup-day balancing. The backend ranks deterministic network candidates and the AI summarizes them.</div><div class="ai-network-grid"><div class="opt-exec-kpi"><span>Objective</span><b>${esc($('aiNetworkObjective')?.selectedOptions?.[0]?.textContent || 'Lowest total cost')}</b></div><div class="opt-exec-kpi"><span>PLC reassignment</span><b>${$('aiIncludePlcReassignment')?.checked?'Included':'Off'}</b></div><div class="opt-exec-kpi"><span>Route merge</span><b>${$('aiIncludeRouteMerge')?.checked?'Included':'Off'}</b></div><div class="opt-exec-kpi"><span>Route split</span><b>${$('aiIncludeRouteSplit')?.checked?'Included':'Off'}</b></div><div class="opt-exec-kpi"><span>Pickup-day balancing</span><b>${$('aiIncludePickupDayBalancing')?.checked?'Included':'Off'}</b></div></div></section>`;
+  }
+  function renderDashboard(result=null){
+    const rows=includedRows();
+    const recs=selectedRecommendations(result).slice(0,8);
+    $('aiNetworkDashboard').innerHTML = baselineHtml(rows) + scenarioOptionsHtml() + `<section class="opt-exec-section"><div class="opt-section-eyebrow">3. Run AI Optimization</div><h2>Run the network model</h2><p class="mini-note">Click <b>Run AI Network Optimization</b> to analyze all plasma centers, generate route groups, validate contract/schedule/Week A-B/pickup windows, calculate savings, and rank recommendations.</p></section>` + recommendationsHtml(recs, result);
+    renderAiNetworkMap(result, rows);
+    renderAiNetworkTable(recs, rows);
+  }
+  function recommendationsHtml(recs, result){
+    if(!recs.length) return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations</div><h2>Recommendations will appear after the run</h2><p class="mini-note">AI recommendations, logic trail, and savings proof will show here.</p></section>`;
+    return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations + Proof</div><h2>Ranked Network Recommendations</h2>${recs.map((r,i)=>recCard(r,i)).join('')}</section>`;
+  }
+  function recCard(r,i){
+    const groups=r.proposedRouteGroups||[]; const proof=groups[0]?.savingsProof || {};
+    return `<div class="ai-rec-card"><h3>${i+1}. ${esc(r.description || r.scenarioType || r.id || 'Network recommendation')}</h3><div class="ai-proof-grid"><div><span>Affected routes</span><b>${(r.affectedRoutes||[]).length}</b></div><div><span>Affected centers</span><b>${(r.affectedCenters||[]).length}</b></div><div><span>Current PLC</span><b>${esc(groups[0]?.centersIncluded?.[0]?.currentPLC || 'Mixed')}</b></div><div><span>Proposed PLC</span><b>${esc(groups[0]?.proposedPLC || 'Mixed')}</b></div><div><span>Current cost</span><b>${fmtMoney(r.currentNetworkCost)}</b></div><div><span>Proposed cost</span><b>${fmtMoney(r.proposedNetworkCost)}</b></div><div><span>Savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Confidence</span><b>${esc(r.confidence||'')}</b></div><div><span>Risk level</span><b>${esc(r.finalStatus==='Recommended'?'Low':'Needs validation')}</b></div><div><span>Status</span><b>${esc(r.finalStatus||'')}</b></div></div><p><b>Why AI recommends it:</b> ${esc(r.description || r.leadershipSummary || 'Scenario reduces deterministic network cost while preserving route-group validation screens.')}</p><p><b>Logic trail:</b> Data reviewed: center, route, PLC, schedule, cases, pallets, mileage and cost. Rule applied: ${esc(typeof r.contractRuleUsed==='string'?r.contractRuleUsed:'contract, schedule and pallet rules')}. What changed: ${esc((r.affectedRoutes||[]).slice(0,8).join(', '))}. Why savings exist: ${esc(r.formulaUsed||'current cost - proposed cost')}. Human validation: ${esc(r.operationalRisk||'Validate contract and schedule details.')}</p><div class="ai-proof-grid"><div><span>Current charged miles</span><b>${Number(proof.currentTotalChargedMiles||0).toLocaleString()}</b></div><div><span>Proposed charged miles</span><b>${Number(proof.proposedChargedMiles||0).toLocaleString()}</b></div><div><span>Current fuel</span><b>${fmtMoney(r.baseline?.fuel)}</b></div><div><span>Proposed fuel</span><b>${fmtMoney(r.proposed?.fuel)}</b></div><div><span>Current linehaul</span><b>${fmtMoney(r.baseline?.linehaul)}</b></div><div><span>Proposed linehaul</span><b>${fmtMoney(r.proposed?.linehaul)}</b></div><div><span>Current total cost</span><b>${fmtMoney(r.currentNetworkCost)}</b></div><div><span>Proposed total cost</span><b>${fmtMoney(r.proposedNetworkCost)}</b></div><div><span>Weekly savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Annual savings</span><b>${r.finalStatus==='Recommended'?fmtMoney(r.annualSavings):'Estimated — requires validation'}</b></div></div><p><b>Formula used:</b> ${esc(r.formulaUsed||proof.formulaUsed||'weekly savings = current contract cost - proposed contract cost')}</p></div>`;
+  }
+  function renderAiNetworkMap(result, rows){
+    const mode=$('aiNetworkMapMode')?.value || 'current';
+    centerLayer.clearLayers(); lineLayer.clearLayers(); plcLayer.clearLayers(); truckLayer.clearLayers();
+    for(const [name,c] of Object.entries(plcCoords)){ if(c) plcLayer.addLayer(L.marker([c.lat,c.lng], {icon:plcIcon(name,colorFor(name))}).bindPopup(`<b>${esc(name)}</b>`)); }
+    if(result && mode !== 'current'){
+      const scenario=selectedRecommendations(result)[0];
+      (scenario?.proposedRouteGroups||[]).forEach((g,gi)=>{ const status=String(g.savingsProof?.savingsStatus||'Needs Validation'); const color=mode==='difference'?(status==='Recommended'?'#16a34a':status==='Not Recommended'?'#dc2626':'#f97316'):routeColor(g.proposedGroupName||`AI-${gi}`); const seq=(g.routeSequence||[]).map(x=>(DATA.records||[]).find(r=>String(r.id)===String(x.id)||String(r.centerNumber)===String(x.centerNumber))).filter(r=>r&&r.hasCoords); seq.forEach((r,idx)=>centerLayer.addLayer(L.marker([r.lat,r.lng],{icon:stopIcon(idx+1,color)}).bindPopup(`<b>${esc(g.proposedGroupName)}</b><br>${esc(r.routeName)}<br>Status: ${esc(status)}`))); const p=plcCoords[g.proposedPLC]; if(seq.length&&p) lineLayer.addLayer(L.polyline(seq.map(r=>[r.lat,r.lng]).concat([[p.lat,p.lng]]),{color,weight:4,opacity:.75})); });
+      if(mode==='difference'){ coverage(rows).excluded.forEach(x=>{ const r=x.raw; if(r?.hasCoords) centerLayer.addLayer(L.marker([r.lat,r.lng],{icon:markerIcon('#64748b')}).bindPopup(`<b>${esc(r.routeName||'Excluded center')}</b><br>Excluded: ${esc(x.reasons.join('; '))}<br>Missing: ${esc(x.missing.join(', ')||'Filtered/user setting/other')}`)); }); }
+    } else {
+      rows.slice(0,80).forEach(row => (row.stops||[]).forEach(stop=>{ if(stop.hasCoords) centerLayer.addLayer(L.marker([stop.lat,stop.lng],{icon:markerIcon('#2563eb')}).bindPopup(`<b>${esc(stop.routeName)}</b><br>Current route: ${esc(row.route)}`)); }));
+    }
+  }
+  function renderAiNetworkTable(recs, rows){
+    const table=$('resultsTable'); if(!table || activeView!=='aiNetwork') return;
+    if(!recs.length){ table.innerHTML='<tbody><tr><td>Run AI Network Optimization to populate recommendation details.</td></tr></tbody>'; return; }
+    table.innerHTML=`<thead><tr><th>Recommendation</th><th>Status</th><th>Current Cost</th><th>Proposed Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Risk</th><th>Formula</th></tr></thead><tbody>${recs.map((r,i)=>`<tr><td>${i+1}. ${esc(r.scenarioType||r.id)}</td><td>${esc(r.finalStatus||'')}</td><td>${fmtMoney(r.currentNetworkCost)}</td><td>${fmtMoney(r.proposedNetworkCost)}</td><td>${fmtMoney(r.savings)}</td><td>${r.finalStatus==='Recommended'?fmtMoney(r.annualSavings):'Estimated — requires validation'}</td><td>${esc(r.operationalRisk||'')}</td><td>${esc(r.formulaUsed||'')}</td></tr>`).join('')}</tbody>`;
+  }
+  async function runAi(){
+    $('aiNetworkDashboard').innerHTML = baselineHtml(includedRows()) + `<section class="opt-exec-section"><h2>Running AI Network Optimization...</h2><p>Generating route groups, validating rules, and calculating deterministic savings proof.</p></section>`;
+    const body={scope:'all', objective:$('aiNetworkObjective')?.value || 'savings', question:'AI Network Optimizer: generate proposed route groups and rank network scenarios with deterministic savings proof.', maxRoutes:20, scenarioOptions:{includePlcReassignment:Boolean($('aiIncludePlcReassignment')?.checked), includeRouteMerge:Boolean($('aiIncludeRouteMerge')?.checked), includeRouteSplit:Boolean($('aiIncludeRouteSplit')?.checked), includePickupDayBalancing:Boolean($('aiIncludePickupDayBalancing')?.checked)}};
+    const res=await fetch('/api/ai-route-optimizer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const json=await res.json(); if(!res.ok) throw new Error(json.error||'AI network optimization failed'); window.latestAiNetworkResult=json; renderDashboard(json);
+  }
+  function exportCsv(kind){
+    const rows=[]; const result=window.latestAiNetworkResult||{}; const recs=selectedRecommendations(result); const cov=coverage(includedRows());
+    if(kind==='excluded') {
+      rows.push(['Center Name','City','State','Current PLC','Route Name','Exclusion Reason','Missing Data Fields'], ...cov.excluded.map(x=>[x.centerName,x.city,x.state,x.currentPLC,x.routeName,x.reasons.join('; '),x.missing.join('; ')]));
+    } else if(kind==='moved-centers') {
+      const top=recs[0]||{}; rows.push(['Center Number','Center Name','City','State','Current PLC','Proposed PLC','Proposed Group']);
+      [...(top.centersMovedDallasToWhitestown||[]), ...(top.centersMovedWhitestownToDallas||[])].forEach(x=>rows.push([x.centerNumber,x.centerName,x.city,x.state,x.currentPLC,x.proposedPLC,x.proposedGroup]));
+    } else if(kind==='proof') {
+      rows.push(['Scenario','Group','Current Miles','Proposed Miles','Current Weekly Cost','Proposed Weekly Cost','Weekly Savings','Annual Savings','Formula','Status']);
+      recs.forEach(r => (r.proposedRouteGroups||[]).forEach(g => { const p=g.savingsProof||{}; rows.push([r.id||r.scenarioType,g.proposedGroupName,p.currentTotalChargedMiles,p.proposedChargedMiles,p.currentWeeklyCost,p.proposedWeeklyCost,p.weeklySavings,p.annualSavings,p.formulaUsed,p.savingsStatus]); }));
+    } else {
+      rows.push(['Recommendation','Status','Current Cost','Proposed Cost','Weekly Savings','Annual Savings','Formula'], ...recs.map((r,i)=>[i+1,r.finalStatus,r.currentNetworkCost,r.proposedNetworkCost,r.savings,r.annualSavings,r.formulaUsed]));
+    }
+    const csv=rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`ai-network-${kind}.csv`; a.click();
+  }
+  const priorSetView=setView; setView=function(view){ priorSetView(view); document.body.classList.toggle('ai-network-active', view==='aiNetwork'); if(view==='aiNetwork'){ $('mapTitle').textContent='AI Network Optimizer'; $('visiblePill').textContent='Business-facing AI workflow'; renderDashboard(window.latestAiNetworkResult||null); } };
+  $('aiRunNetworkOptimization')?.addEventListener('click',()=>runAi().catch(e=>{ $('aiNetworkDashboard').innerHTML=baselineHtml(includedRows())+`<section class="opt-exec-section"><h2>AI optimizer error</h2><p>${esc(e.message)}</p></section>`; }));
+  ['aiNetworkObjective','aiNetworkMapMode','aiIncludePlcReassignment','aiIncludeRouteMerge','aiIncludeRouteSplit','aiIncludePickupDayBalancing'].forEach(id=>$(id)?.addEventListener('change',()=>renderDashboard(window.latestAiNetworkResult||null)));
+  $('aiExportSummary')?.addEventListener('click',()=>exportCsv('summary')); $('aiExportProof')?.addEventListener('click',()=>exportCsv('proof')); $('aiExportMovedCenters')?.addEventListener('click',()=>exportCsv('moved-centers')); $('aiExportExcludedCenters')?.addEventListener('click',()=>exportCsv('excluded'));
 })();
 
 </script>
