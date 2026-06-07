@@ -14,9 +14,9 @@
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;background:var(--bg);color:var(--ink)}
-    .app{display:grid;grid-template-columns:minmax(280px,320px) 1fr;min-height:100vh}
-    aside{background:var(--panel);border-right:1px solid var(--border);padding:14px;overflow:auto;max-height:100vh;max-width:320px;width:100%}
-    main{display:grid;grid-template-rows:auto 1fr auto;min-width:0}
+    .app{display:grid;grid-template-columns:minmax(260px,280px) minmax(0,1fr);min-height:100vh;overflow-x:hidden}
+    aside{background:var(--panel);border-right:1px solid var(--border);padding:12px;overflow:auto;max-height:100vh;max-width:280px;width:100%}
+    main{display:grid;grid-template-rows:auto auto auto 360px auto;min-width:0;overflow:hidden}
     h1{font-size:21px;line-height:1.2;margin:0 0 8px;font-weight:800;letter-spacing:-.02em}
     .sub{font-size:13px;color:var(--muted);line-height:1.35;margin-bottom:16px}
     .notice{font-size:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:12px;padding:10px 12px;margin:10px 0 14px;line-height:1.35}
@@ -101,9 +101,9 @@
 
 
     /* User-friendly optimization workflow table */
-    body.optimization-active #map{min-height:330px;height:42vh;}
+    body.optimization-active #map{min-height:360px;height:360px;}
     body.optimization-active .footer-panel{max-height:52vh;overflow:auto;border-top:2px solid #cbd5e1;}
-    body.optimization-active #resultsTable{min-width:2600px;font-size:12px;}
+    body.optimization-active #resultsTable{min-width:100%;width:100%;font-size:12px;}
     body.optimization-active #resultsTable th{background:#0f172a;color:#fff;border-bottom:1px solid #334155;top:0;z-index:5;}
     body.optimization-active #resultsTable td{vertical-align:top;white-space:normal;min-width:110px;}
     body.optimization-active #resultsTable .route-group-row td{background:#e0f2fe;color:#0c4a6e;font-weight:900;border-top:2px solid #0284c7;border-bottom:1px solid #bae6fd;}
@@ -138,7 +138,7 @@
     .opt-section-eyebrow{font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:2px}
     .opt-story-section{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;border-color:#1e3a8a}
     .opt-story-section h2,.opt-story-section .opt-section-eyebrow{color:#fff}
-    .opt-story-flow{display:grid;grid-template-columns:1fr;gap:8px;align-items:stretch}.opt-story-vertical .opt-story-arrow{text-align:center}
+    .opt-story-flow{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:8px;align-items:stretch}.opt-story-vertical .opt-story-arrow{display:none}
     .opt-story-flow div:not(.opt-story-arrow){border:1px solid rgba(255,255,255,.22);border-radius:13px;padding:9px;background:rgba(255,255,255,.08)}
     .opt-story-flow span,.opt-exec-kpi span,.opt-move-summary span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:900;color:#94a3b8}
     .opt-story-flow b{display:block;font-size:16px;margin-top:4px;color:#fff}.opt-story-arrow{font-size:20px;font-weight:950;align-self:center;color:#bfdbfe}
@@ -159,15 +159,24 @@
     .risk-low{color:#15803d;font-weight:900}.risk-med{color:#b45309;font-weight:900}.risk-high{color:#b91c1c;font-weight:900}
     .sidebar-toggle{border:1px solid var(--border);background:#fff;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:900;color:#334155;cursor:pointer;margin:0 0 10px}
     body.sidebar-collapsed .app{grid-template-columns:42px 1fr}body.sidebar-collapsed aside{padding:8px;overflow:hidden}body.sidebar-collapsed aside>*:not(.sidebar-toggle){display:none!important}.coverage-warning{border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:14px;padding:10px 12px;margin:10px 0;font-size:12px;line-height:1.4;font-weight:800}.coverage-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.coverage-card{border:1px solid #e2e8f0;background:#f8fafc;border-radius:12px;padding:9px}.coverage-card span{display:block;font-size:10px;text-transform:uppercase;color:#64748b;font-weight:900}.coverage-card b{font-size:18px;color:#0f172a}.excluded-table-wrap{max-height:230px;overflow:auto;border:1px solid #e2e8f0;border-radius:12px;margin-top:8px}.missing-chip{display:inline-block;border-radius:999px;background:#f1f5f9;border:1px solid #cbd5e1;padding:2px 6px;margin:1px;font-size:10px;font-weight:800;color:#475569}
+    body.optimization-active #plcSummary, body.optimization-active aside>.legend, body.optimization-active #optExecutiveSummarySection{display:none!important}
+    #optMainDashboard,#optMainActionBar{display:none}
+    body.optimization-active #optMainDashboard{display:block;padding:12px 14px;background:#f8fafc;border-bottom:1px solid var(--border);overflow:hidden}
+    body.optimization-active #optMainActionBar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:#fff;border-bottom:1px solid var(--border)}
+    #optMainDashboard .opt-exec-section,#optMainDashboard .ai-optimizer-card{max-width:100%;margin:0 0 10px}
+    #optMainDashboard .opt-exec-kpi b,#optMainDashboard .opt-story-flow b{overflow-wrap:anywhere;white-space:normal}
+    #optMainDashboard table{table-layout:auto;min-width:0}
+    .opt-distribution-card td{white-space:normal}
+    .opt-action-spacer{flex:1 1 auto}
     @media(max-width:1200px){.opt-story-flow,.opt-distribution-charts,.opt-move-summary{grid-template-columns:1fr}.opt-story-arrow{display:none}}
 
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
 
 /* ===== Cody UX update: intuitive route decision workflow ===== */
-body.optimization-active .app{grid-template-columns:420px 1fr;}
-body.optimization-active #map{min-height:330px;height:42vh;}
-body.optimization-active .footer-panel{max-height:none;height:calc(58vh - 74px);overflow:auto;background:#f8fafc;}
+body.optimization-active .app{grid-template-columns:minmax(260px,280px) minmax(0,1fr);}
+body.optimization-active #map{min-height:360px;height:360px;}
+body.optimization-active .footer-panel{max-height:42vh;overflow:auto;background:#f8fafc;}
 body.optimization-active aside{padding-bottom:34px;}
 .opt-stepper{display:grid;gap:8px;margin:12px 0;}
 .opt-step{display:grid;grid-template-columns:28px 1fr;gap:9px;align-items:start;border:1px solid var(--border);background:#fff;border-radius:14px;padding:9px;}
@@ -212,7 +221,7 @@ body.optimization-active aside{padding-bottom:34px;}
 .opt-click-row{cursor:pointer;}
 .opt-click-row:hover td{background:#f1f5f9;}
 .stopNumberIcon{border-radius:999px;width:25px;height:25px;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:950;color:#fff;box-shadow:0 2px 8px rgba(15,23,42,.35)}
-@media(max-width:1200px){.opt-decision-wrap,.opt-workflow-grid{grid-template-columns:1fr;}body.optimization-active .app{grid-template-columns:360px 1fr;}}
+@media(max-width:1200px){.opt-decision-wrap,.opt-workflow-grid{grid-template-columns:1fr;}body.optimization-active .app{grid-template-columns:minmax(240px,280px) minmax(0,1fr);}}
 
 </style>
 </head>
@@ -371,7 +380,7 @@ body.optimization-active aside{padding-bottom:34px;}
 
 
     <div id="optimizationPanel" class="view-panel hidden">
-      <section class="opt-exec-section opt-story-section">
+      <section class="opt-exec-section opt-story-section" id="optStorySection">
         <div class="opt-section-eyebrow">Executive Story</div>
         <h2>Network Optimization Decision Dashboard</h2>
         <div class="opt-story-flow opt-story-vertical" id="optExecutiveStory">
@@ -386,10 +395,11 @@ body.optimization-active aside{padding-bottom:34px;}
           <div><span>Centers Reassigned</span><b id="optStoryCentersReassigned">—</b></div>
           <div class="opt-story-arrow">↓</div>
           <div><span>Routes Modified</span><b id="optStoryRoutesModified">—</b></div>
+          <div><span>Confidence Score</span><b id="optStoryConfidenceScore">—</b></div>
         </div>
       </section>
 
-      <section class="opt-exec-section">
+      <section class="opt-exec-section opt-secondary-summary" id="optExecutiveSummarySection">
         <div class="opt-section-eyebrow">Section 1</div>
         <h2>Executive Summary</h2>
         <div class="opt-kpi-subtitle">Current Network</div>
@@ -412,7 +422,7 @@ body.optimization-active aside{padding-bottom:34px;}
         </div>
       </section>
 
-      <section class="opt-exec-section">
+      <section class="opt-exec-section" id="optDistributionSection">
         <div class="opt-section-eyebrow">Section 2</div>
         <h2>Current vs Proposed Distribution Network</h2>
         <div class="opt-distribution-charts">
@@ -426,7 +436,7 @@ body.optimization-active aside{padding-bottom:34px;}
         </div>
       </section>
 
-      <section class="opt-exec-section">
+      <section class="opt-exec-section" id="optAiSummarySection">
         <div class="opt-section-eyebrow">AI Recommendation Summary</div>
         <h2>What changed, why it changed, and savings impact</h2>
         <div class="opt-exec-grid">
@@ -456,7 +466,7 @@ body.optimization-active aside{padding-bottom:34px;}
         </details>
       </section>
 
-      <section class="ai-optimizer-card opt-ai-recommendations">
+      <section class="ai-optimizer-card opt-ai-recommendations" id="optAiRecommendationsSection">
         <div class="opt-section-eyebrow">Section 3 + 7</div>
         <h2>AI Network Recommendations</h2>
         <div><b>Purpose:</b> AI analyzes all plasma centers, current Dallas/Whitestown assignments, pickup schedules, Week A/B cadence, cases, pallets, mileage, fuel, linehaul, and contract rules. Deterministic math validates contract cost, schedules, pickup windows, PLC eligibility, trailer rules, and savings.</div>
@@ -519,26 +529,8 @@ body.optimization-active aside{padding-bottom:34px;}
         </div>
       </details>
 
-      <details class="opt-collapsible" id="optPackagePalletAssumptions">
-        <summary>Package/Pallet Assumptions</summary>
-        <ul class="opt-methodology-list">
-          <li>Route pallet estimate = total route cases ÷ 70 cases per pallet.</li>
-          <li>Collection planning uses 48 ft refrigerated trailer validation.</li>
-          <li>Workbook weeklyPallets remains center allocation data and is not mixed into route optimization savings math.</li>
-        </ul>
-      </details>
-
-      <details class="opt-collapsible" id="optOptimizationLogic">
-        <summary>Optimization Logic</summary>
-        <ul class="opt-methodology-list">
-          <li>Network scenarios evaluate route consolidation, splitting, merging, PLC reassignment, pickup-day balancing, trailer utilization balancing, and geography.</li>
-          <li>AI can suggest route groups; deterministic math calculates current/proposed contract cost and savings proof.</li>
-          <li>Savings are displayed only when proposed total contract cost is lower than current total contract cost.</li>
-        </ul>
-      </details>
-
       <details class="opt-collapsible" id="optMethodology">
-        <summary>ⓘ Methodology</summary>
+        <summary>ⓘ Methodology / Assumptions</summary>
         <ul class="opt-methodology-list">
           <li><b>Contract Rules Used:</b> charge begins at first pickup; deadhead/origin is tracked but excluded unless the contract changes.</li>
           <li><b>Fuel Formula:</b> fuel surcharge = linehaul × workbook/rate-table fuel surcharge percentage.</li>
@@ -547,6 +539,8 @@ body.optimization-active aside{padding-bottom:34px;}
           <li><b>Pallet Rules:</b> route pallet estimate = total route cases ÷ 70 cases per pallet.</li>
           <li><b>Schedule Constraints:</b> do not move a center outside its pickup day or pickup time window.</li>
           <li><b>Week A / Week B Logic:</b> proposed route groups must preserve cadence compatibility or be labeled for validation.</li>
+          <li><b>Package/Pallet Assumptions:</b> route pallet estimate = total route cases ÷ 70 cases per pallet; workbook weeklyPallets remains center allocation data.</li>
+          <li><b>Optimization Logic:</b> network scenarios evaluate consolidation, splitting, route merging, PLC reassignment, pickup-day balancing, trailer utilization balancing, and geography.</li>
           <li><b>Validation Rules:</b> recommendations require lower proposed contract cost; missing truck-valid miles, pickup windows, or contract eligibility remains Needs Contract Validation.</li>
         </ul>
       </details>
@@ -567,6 +561,15 @@ body.optimization-active aside{padding-bottom:34px;}
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
+    </div>
+    <div id="optMainDashboard" aria-label="Optimization Engine executive dashboard"></div>
+    <div id="optMainActionBar" aria-label="Optimization Engine action bar">
+      <button class="action primary" id="optTopStartRoute" type="button">Start With One Route</button>
+      <button class="action" id="optTopPhilly" type="button">Focus PHILLY Relay</button>
+      <button class="action" id="optTopShowAll" type="button">Show All Route Groups</button>
+      <span class="opt-action-spacer"></span>
+      <button class="action" id="optTopExport" type="button">Export CSV</button>
+      <button class="action" id="optFullscreenMap" type="button">Fullscreen Map</button>
     </div>
     <div id="map"></div>
     <div class="footer-panel">
@@ -2326,8 +2329,22 @@ async function loadActualOptimizationRoutes(){
 function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : refreshPlc(); }
 function onModeChange(){
   const current=$('plcFilter').value;
-  populateFilters();
+  function installOptimizationMainLayout(){
+  const mount=$('optMainDashboard');
+  if(!mount) return;
+  ['optStorySection','optCoverageValidation','optDistributionSection','optAiSummarySection','optAiRecommendationsSection'].forEach(id=>{
+    const el=$(id);
+    if(el && el.parentElement !== mount) mount.appendChild(el);
+  });
+}
+installOptimizationMainLayout();
+populateFilters();
 if($('sidebarToggle')) $('sidebarToggle').addEventListener('click', ()=>{ document.body.classList.toggle('sidebar-collapsed'); $('sidebarToggle').textContent = document.body.classList.contains('sidebar-collapsed') ? '☰' : '☰ Collapse'; });
+if($('optTopStartRoute')) $('optTopStartRoute').addEventListener('click', ()=> $('optStartFirstRoute')?.click());
+if($('optTopPhilly')) $('optTopPhilly').addEventListener('click', ()=> $('optQuickPhilly')?.click());
+if($('optTopShowAll')) $('optTopShowAll').addEventListener('click', ()=> $('optQuickAll')?.click());
+if($('optTopExport')) $('optTopExport').addEventListener('click', ()=> $('optExport')?.click());
+if($('optFullscreenMap')) $('optFullscreenMap').addEventListener('click', ()=> { const el=$('map'); if(el?.requestFullscreen) el.requestFullscreen(); });
   if([...$('plcFilter').options].some(o=>o.value===current)) $('plcFilter').value=current;
   refresh();
 }
@@ -2387,6 +2404,7 @@ if($('geoapifyApiKey')){
   setView = function(view){
     originalSetView(view);
     document.body.classList.toggle('optimization-active', view === 'optimization');
+    installOptimizationMainLayout();
     updateOptimizationLoadHelper();
   };
 
@@ -2840,7 +2858,7 @@ if($('geoapifyApiKey')){
     const setText=(id,val)=>{ const el=$(id); if(el) el.textContent=val; };
     setText('optCoverageOpen', fmt0(rec.openCount)); setText('optCoverageIncluded', fmt0(rec.includedCount)); setText('optCoverageExcluded', fmt0(rec.excluded.length)); setText('optCoveragePct', `${rec.coveragePct.toFixed(1)}%`);
     const warn=$('optCoverageWarning');
-    if(warn){ warn.innerHTML = rec.excluded.length ? `Optimization results currently include <b>${fmt0(rec.includedCount)}</b> of <b>${fmt0(rec.openCount)}</b> open plasma centers. Savings calculations may change after excluded centers are reviewed.` : `Optimization results include all <b>${fmt0(rec.openCount)}</b> open plasma centers in the workbook.`; }
+    if(warn){ warn.innerHTML = rec.excluded.length ? `Optimization uses <b>${fmt0(rec.includedCount)}</b> of <b>${fmt0(rec.openCount)}</b> open centers. <b>${fmt0(rec.excluded.length)}</b> centers are excluded and need validation before savings are final.` : `Optimization uses all <b>${fmt0(rec.openCount)}</b> open centers. No centers are excluded from the current optimization view.`; }
     const tbody=$('optExcludedCentersRows');
     if(tbody){ tbody.innerHTML = rec.excluded.map(x=>`<tr><td>${esc(x.stop.routeName||x.stop.centerName||'')}</td><td>${esc(x.stop.city||'')}</td><td>${esc(x.stop.state||'')}</td><td>${esc(endpointPLCFor(x.stop)||'')}</td><td>${esc(getRouteName(x.stop)||'')}</td><td>${esc(x.reasons.join('; '))}</td><td>${x.missing.length ? x.missing.map(m=>`<span class="missing-chip">${esc(m)}</span>`).join('') : '<span class="missing-chip">User filter / other</span>'}</td></tr>`).join('') || '<tr><td colspan="7">No excluded open centers.</td></tr>'; }
     return rec;
@@ -2932,7 +2950,7 @@ if($('geoapifyApiKey')){
       optExecCenters: fmt0(centers.size), optExecRoutes: fmt0(visible.length), optExecCases: fmt0(cases), optExecPallets: fmt1(pallets), optExecWeeklyCost: money2(currentCost), optExecAnnualCost: money2(currentCost*52),
       optAiAnnualSavings: money2(annualSavings), optAiRoutesImpacted: fmt0(impacted), optAiCentersReassigned: fmt0(moves.changed), optAiMileageReduction: `${safePct(milesSaved,currentMiles).toFixed(1)}%`, optAiTrailerImprovement: `${Math.max(0,trailerProposed-trailerCurrent).toFixed(1)}%`, optAiConfidenceScore: `${confidenceScoreForRows(visible)}%`,
       optSummaryAnnualSavings: money2(annualSavings), optSummaryCentersReassigned: fmt0(moves.changed), optSummaryRoutesModified: fmt0(impacted), optSummaryMileageReduction: `${safePct(milesSaved,currentMiles).toFixed(1)}%`, optSummaryConfidenceScore: `${confidenceScoreForRows(visible)}%`, optSummaryValidationStatus: visible.some(r=>statusForRecommendation(r)==='Needs Contract Validation') ? 'Needs Contract Validation' : 'Validated',
-      optStoryCurrentCost: money2(currentCost), optStoryProposedCost: money2(proposedCost), optStoryWeeklySavings: money2(Math.max(0,currentCost-proposedCost)), optStoryAnnualSavings: money2(annualSavings), optStoryCentersReassigned: fmt0(moves.changed), optStoryRoutesModified: fmt0(impacted), optMoveDallasToWhitestown: fmt0(moves.d2w), optMoveWhitestownToDallas: fmt0(moves.w2d), optMoveNetChange: `${moves.netWhitestown>=0?'+':''}${fmt0(moves.netWhitestown)} to Whitestown`
+      optStoryCurrentCost: money2(currentCost), optStoryProposedCost: money2(proposedCost), optStoryWeeklySavings: money2(Math.max(0,currentCost-proposedCost)), optStoryAnnualSavings: money2(annualSavings), optStoryCentersReassigned: fmt0(moves.changed), optStoryRoutesModified: fmt0(impacted), optStoryConfidenceScore: `${confidenceScoreForRows(visible)}%`, optMoveDallasToWhitestown: fmt0(moves.d2w), optMoveWhitestownToDallas: fmt0(moves.w2d), optMoveNetChange: `${moves.netWhitestown>=0?'+':''}${fmt0(moves.netWhitestown)} to Whitestown`
     };
     Object.entries(pairs).forEach(([id,val])=>{ const el=$(id); if(el) el.textContent=val; });
     renderDistributionChart('optCurrentDistributionChart', currentDist); renderDistributionChart('optProposedDistributionChart', proposedDist);
@@ -2940,7 +2958,7 @@ if($('geoapifyApiKey')){
     renderRecommendationPanel(visible);
     const coverage = renderCoverageValidation(visible);
     const explain=$('optSummaryExplanation');
-    if(explain) explain.innerHTML = `What changed: <b>${fmt0(impacted)}</b> routes modified and <b>${fmt0(moves.changed)}</b> centers reassigned. Why: scenarios reduce route miles/cost while preserving contract and schedule validation. Savings: <b>${money2(annualSavings)}</b> annual opportunity across included centers. Coverage: <b>${fmt0(coverage.includedCount)}</b> of <b>${fmt0(coverage.openCount)}</b> open centers included.`;
+    if(explain) explain.innerHTML = `What changed: <b>${fmt0(impacted)}</b> routes modified and <b>${fmt0(moves.changed)}</b> centers reassigned. Why: scenarios reduce route miles/cost while preserving contract and schedule validation. Savings: <b>${money2(annualSavings)}</b> annual opportunity across included centers. Risks / validation needed: <b>${visible.some(r=>statusForRecommendation(r)==='Needs Contract Validation') ? 'contract validation required' : 'no blocking validation flags in current view'}</b>. Coverage: <b>${fmt0(coverage.includedCount)}</b> of <b>${fmt0(coverage.openCount)}</b> open centers included.`;
   }
   function renderNetworkMapMode(rows){
     if(activeView !== 'optimization') return;
@@ -2974,25 +2992,10 @@ if($('geoapifyApiKey')){
     if(bounds.length) map.fitBounds(bounds,{padding:[35,35], maxZoom:6});
   }
   function updateDecisionDashboard(rows){
-    const existing = $('optDecisionDashboard');
-    if(!existing){
-      const wrap = document.createElement('div');
-      wrap.id = 'optDecisionDashboard';
-      wrap.className = 'opt-decision-wrap';
-      const mapEl = $('map');
-      if(mapEl) mapEl.insertAdjacentElement('beforebegin', wrap);
-    }
     const dashboard = $('optDecisionDashboard');
-    if(!dashboard) return;
-    if(activeView !== 'optimization'){ dashboard.style.display='none'; return; }
-    dashboard.style.display='grid';
+    if(dashboard) dashboard.style.display='none';
+    if(activeView !== 'optimization') return;
     const visible = rows || [];
-    const currentCost = visible.reduce((a,r)=>a+(Number(r.currentTotal)||0),0);
-    const proposedCost = visible.reduce((a,r)=>a+(Number(r.newTotal)||0),0);
-    const annualSavings = visible.reduce((a,r)=>a+Math.max(0,Number(r.annualSavings)||0),0);
-    const moves = movementSummaryFromRows(visible);
-    const impacted = visible.filter(r=>r.weeklySavings>0 || r.milesSaved>0 || riskLevelForRoute(r)==='High').length;
-    dashboard.innerHTML = `<div class="opt-decision-card"><h3>Current Network Cost</h3><div class="opt-big-number">${money2(currentCost)}</div><div class="opt-explain">Current McKesson route-group contract cost from workbook/rate-table logic.</div></div><div class="opt-decision-card"><h3>Proposed Network Cost</h3><div class="opt-big-number">${money2(proposedCost)}</div><div class="opt-explain">Proposed full-network route group cost; savings labels require lower proposed cost.</div></div><div class="opt-decision-card"><h3>Annual Savings</h3><div class="opt-big-number">${money2(annualSavings)}</div><div class="opt-explain">Centers reassigned: <b>${fmt0(moves.changed)}</b> · Routes modified: <b>${fmt0(impacted)}</b>.</div></div>`;
     renderExecutiveSummary(visible);
     renderNetworkMapMode(visible);
   }
@@ -3073,7 +3076,7 @@ if($('geoapifyApiKey')){
     if(!table){ return; }
     const selected = getSelectedRoute();
     if(activeView === 'optimization' && !selected && !window.codyOptShowAllRoutes){
-      table.innerHTML = `<tbody><tr><td><div class="opt-empty-state"><h2>Select one route to begin</h2><p>The Optimization Engine is now route-first. Choose a route from the left panel, then the app will show the current route workflow and proposed route workflow with numeric stops, miles, fuel, linehaul, 48/53 ft trailer load logic, and exportable details.</p><div class="opt-empty-actions"><button class="action primary" type="button" onclick="document.getElementById('optStartFirstRoute').click()">Start With One Route</button><button class="action" type="button" onclick="document.getElementById('optQuickPhilly').click()">Focus PHILLY Relay</button><button class="action" type="button" onclick="document.getElementById('optQuickAll').click()">Show All Route Groups</button></div></div></td></tr></tbody>`;
+      table.innerHTML = '<tbody></tbody>';
       return;
     }
     if(!rows.length){
@@ -3101,7 +3104,7 @@ if($('geoapifyApiKey')){
       addNumberedRouteMarkers(rows);
       const status = $('optRoutingStatus');
       if(status && !getSelectedRoute() && !window.codyOptShowAllRoutes){
-        status.innerHTML = `Select one route to begin. The app will calculate current workflow vs proposed workflow. Use <b>Show All Route Groups</b> for portfolio view.`;
+        status.innerHTML = `Use the compact action bar above the map to start with one route or show all route groups.`;
       }
     } else {
       updateDecisionDashboard([]);
@@ -3428,7 +3431,7 @@ if($('geoapifyApiKey')){
     installMckessonAssumptionUi();
     const selected=$('optRouteFilter')?.value || '';
     if(activeView === 'optimization' && !selected && !window.codyOptShowAllRoutes){
-      table.innerHTML=`<tbody><tr><td><div class="opt-empty-state"><h2>Select one route to begin</h2><p>The model now follows McKesson's confirmed assumptions: truck origin is shown but not charged, chargeable miles start at first pickup, collection routes use 48 ft refrigerated trailers, 70 cases = 1 pallet, case size is 13.63” × 10.5” × 12”, K3 basket size is 24” × 20” × 7”, and driver-hours are a validation rule.</p><div class="opt-empty-actions"><button class="action primary" type="button" onclick="document.getElementById('optStartFirstRoute').click()">Start With One Route</button><button class="action" type="button" onclick="document.getElementById('optQuickPhilly').click()">Focus PHILLY Relay</button><button class="action" type="button" onclick="document.getElementById('optQuickAll').click()">Show All Route Groups</button></div></div></td></tr></tbody>`;
+      table.innerHTML = '<tbody></tbody>';
       return;
     }
     if(!rows.length){ table.innerHTML=`<tbody><tr><td><div class="opt-empty-state"><h2>No matching routes</h2><p>Reset filters or choose a different route. Savings are calculated only from chargeable first-pickup-to-PLC miles.</p></div></td></tr></tbody>`; return; }
