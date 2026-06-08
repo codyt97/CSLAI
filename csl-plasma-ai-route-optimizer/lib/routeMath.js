@@ -346,20 +346,35 @@ function proposedRouteCost(route, roadFactor=1.18) {
   const endpointPLC = route.endpointPLC || routeEndpointForStops(route.stops || []);
   const legs = buildLegs({ stops: route.stops || [], destinationPLC: endpointPLC, origin: originForRouteName(route.routeName), roadFactor });
   const cases = routeCases(route.stops);
-  const cost = calculateRateTableCost({ chargeableMiles: legs.chargeableMiles, weeklyCases: cases });
+  const storage = round(sum((route.stops || []).map(s => s.storageFeeDollar)), 2);
+  const otherCharges = round(sum((route.stops || []).map(s => s.otherChargesDollar)), 2);
+  const cost = calculateRateTableCost({ chargeableMiles: legs.chargeableMiles, weeklyCases: cases, storage, otherCharges });
   return { ...route, endpointPLC, cases: round(cases,2), pallets: round(cases / ASSUMPTIONS.casesPerPallet,2), legs, cost };
 }
 function currentNetworkBaseline(groups) {
+  const linehaul = round(sum(groups.map(g => g.workbookLinehaul)), 2);
+  const fuel = round(sum(groups.map(g => g.workbookFuel)), 2);
+  const storage = round(sum(groups.flatMap(g => g.stops || []).map(s => s.storageFeeDollar)), 2);
+  const otherCharges = round(sum(groups.flatMap(g => g.stops || []).map(s => s.otherChargesDollar)), 2);
+  const accessorials = round(storage + otherCharges, 2);
+  const stopCharges = 0;
+  const totalCost = round(sum(groups.map(g => g.workbookTotalCost)), 2);
   return {
     routeCount: groups.length,
     stopCount: sum(groups.map(g => g.stopCount)),
     chargedMiles: round(sum(groups.map(g => g.workbookMiles)),2),
-    fuel: round(sum(groups.map(g => g.workbookFuel)),2),
-    linehaul: round(sum(groups.map(g => g.workbookLinehaul)),2),
-    totalCost: round(sum(groups.map(g => g.workbookTotalCost)),2),
-    annualCost: round(sum(groups.map(g => g.workbookTotalCost))*52,2),
+    fuel,
+    surcharge: fuel,
+    linehaul,
+    storage,
+    stopCharges,
+    accessorials,
+    otherCharges,
+    totalCost,
+    annualCost: round(totalCost*52,2),
     pallets: round(sum(groups.map(g => g.routePalletEstimate)),2),
-    cases: round(sum(groups.map(g => g.weeklyCases)),2)
+    cases: round(sum(groups.map(g => g.weeklyCases)),2),
+    costBreakdown: { linehaul, fuel, surcharge: fuel, stopCharges, accessorials, storage, otherCharges, totalCost }
   };
 }
 
@@ -521,27 +536,42 @@ function networkScenario({ id, scenarioType, description, groups, routes, roadFa
   const baseline = currentNetworkBaseline(groups);
   const pricedRoutes = routes.map(r => proposedRouteCost(r, roadFactor));
   const validation = validateNetworkRoutes(pricedRoutes);
+  const proposedLinehaul = round(sum(pricedRoutes.map(r => r.cost.linehaul)), 2);
+  const proposedFuel = round(sum(pricedRoutes.map(r => r.cost.fuel)), 2);
+  const proposedStorage = round(sum(pricedRoutes.map(r => r.cost.storage)), 2);
+  const proposedAccessorials = round(sum(pricedRoutes.map(r => r.cost.otherCharges)), 2);
+  const proposedStopCharges = 0;
+  const proposedTotalCost = round(sum(pricedRoutes.map(r => r.cost.totalCost)), 2);
   const proposed = {
     routeCount: pricedRoutes.length,
     stopCount: sum(pricedRoutes.map(r => (r.stops || []).length)),
     chargedMiles: round(sum(pricedRoutes.map(r => r.legs.chargeableMiles)),2),
-    fuel: round(sum(pricedRoutes.map(r => r.cost.fuel)),2),
-    linehaul: round(sum(pricedRoutes.map(r => r.cost.linehaul)),2),
-    totalCost: round(sum(pricedRoutes.map(r => r.cost.totalCost)),2),
-    annualCost: round(sum(pricedRoutes.map(r => r.cost.totalCost))*52,2),
+    fuel: proposedFuel,
+    surcharge: proposedFuel,
+    linehaul: proposedLinehaul,
+    storage: proposedStorage,
+    stopCharges: proposedStopCharges,
+    accessorials: round(proposedStorage + proposedAccessorials, 2),
+    otherCharges: proposedAccessorials,
+    totalCost: proposedTotalCost,
+    annualCost: round(proposedTotalCost*52,2),
     pallets: round(sum(pricedRoutes.map(r => r.pallets)),2),
-    cases: round(sum(pricedRoutes.map(r => r.cases)),2)
+    cases: round(sum(pricedRoutes.map(r => r.cases)),2),
+    costBreakdown: { linehaul: proposedLinehaul, fuel: proposedFuel, surcharge: proposedFuel, stopCharges: proposedStopCharges, accessorials: round(proposedStorage + proposedAccessorials, 2), storage: proposedStorage, otherCharges: proposedAccessorials, totalCost: proposedTotalCost }
   };
   const currentMix = currentDistributionMix(groups);
   const proposedMix = proposedDistributionMix(pricedRoutes);
   const movedCenters = centersMovedByDistribution(pricedRoutes);
   const proposedRouteGroups = pricedRoutes.map(r => proposedRouteGroup(r, validation, groups));
   const groupSavings = round(sum(proposedRouteGroups.map(g => g.savingsProof?.weeklySavings || 0)), 2);
+  const costDifference = round(proposed.totalCost - baseline.totalCost, 2);
   const weeklySavingsRaw = round(baseline.totalCost - proposed.totalCost, 2);
   const valid = validation.contractValid && validation.scheduleValid && validation.timeWindowValid && validation.weekCadenceValid;
   const estimatedMileage = true;
-  const finalStatus = !valid || estimatedMileage ? 'Needs Contract Validation' : (weeklySavingsRaw > 0 ? 'Recommended' : 'Not Recommended');
+  const isCostIncrease = proposed.totalCost >= baseline.totalCost;
+  const finalStatus = isCostIncrease ? 'Rejected Scenario' : (!valid || estimatedMileage ? 'Needs Contract Validation' : 'Recommended');
   const weeklySavings = weeklySavingsRaw > 0 ? weeklySavingsRaw : 0;
+  const rejectionReason = isCostIncrease ? `Rejected because proposed total cost ${proposed.totalCost} is greater than or equal to current total cost ${baseline.totalCost}; cost increase = ${costDifference}.` : '';
   const affectedRoutes = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.routeNameMckesson)).filter(Boolean));
   const affectedCenters = unique(pricedRoutes.flatMap(r => (r.stops || []).map(s => s.centerNumber || s.id)).filter(Boolean));
   const mileageRisk = 'Truck-valid 48 ft refrigerated route miles are not loaded; proposed miles use estimated road-factor mileage and must be validated before recommendation status can be upgraded.';
@@ -549,6 +579,9 @@ function networkScenario({ id, scenarioType, description, groups, routes, roadFa
     id, scenarioType, description,
     currentNetworkCost: baseline.totalCost,
     proposedNetworkCost: proposed.totalCost,
+    costDifference,
+    costDeltaLabel: costDifference > 0 ? '✗ Cost Increase' : '✓ Savings Candidate',
+    rejectionReason,
     currentAnnualCost: baseline.annualCost,
     proposedAnnualCost: proposed.annualCost,
     savings: weeklySavings,
@@ -570,7 +603,7 @@ function networkScenario({ id, scenarioType, description, groups, routes, roadFa
     proposed,
     routeCount: proposed.routeCount,
     routes: pricedRoutes.map(r => ({ routeName: r.routeName, endpointPLC: r.endpointPLC, stopCount: (r.stops||[]).length, chargedMiles: r.legs.chargeableMiles, totalCost: r.cost.totalCost, scheduleKey: routeScheduleKey(r.stops), centers: (r.stops||[]).map(s => s.centerNumber || s.id) })),
-    formulaUsed: `weekly savings = current network weekly cost ${baseline.totalCost} - proposed network weekly cost ${proposed.totalCost}; annual savings = positive weekly savings × 52; deterministic savings proof is calculated after AI/group generation, not by the AI narrative.`,
+    formulaUsed: `weekly savings = current network weekly cost ${baseline.totalCost} - proposed network weekly cost ${proposed.totalCost}; cost difference = proposed - current = ${costDifference}; annual savings = positive weekly savings × 52; deterministic savings proof is calculated after AI/group generation, not by the AI narrative.`,
     contractRuleUsed: contractRules(),
     scheduleRuleUsed: 'Network scenarios preserve each center pickup day, pickup time window, and Week A/B cadence unless flagged in operationalRisk.',
     finalStatus

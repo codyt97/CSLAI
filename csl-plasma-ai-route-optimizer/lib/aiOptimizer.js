@@ -57,9 +57,12 @@ const NETWORK_SCENARIO_SCHEMA = {
     formulaUsed: { type: 'string' },
     contractRuleUsed: { type: 'string' },
     scheduleRuleUsed: { type: 'string' },
-    finalStatus: { type: 'string', enum: ['Recommended','Not Recommended','Needs Contract Validation'] }
+    finalStatus: { type: 'string', enum: ['Recommended','Not Recommended','Needs Contract Validation','Rejected Scenario'] },
+    costDifference: { type: 'number' },
+    costDeltaLabel: { type: 'string' },
+    rejectionReason: { type: 'string' }
   },
-  required: ['id','scenarioType','description','currentNetworkCost','proposedNetworkCost','currentAnnualCost','proposedAnnualCost','savings','annualSavings','savingsPct','affectedRoutes','affectedCenters','currentDistributionMix','proposedDistributionMix','centersMovedDallasToWhitestown','centersMovedWhitestownToDallas','totalReassignmentSavings','proposedRouteGroups','operationalRisk','confidence','formulaUsed','contractRuleUsed','scheduleRuleUsed','finalStatus']
+  required: ['id','scenarioType','description','currentNetworkCost','proposedNetworkCost','currentAnnualCost','proposedAnnualCost','savings','annualSavings','savingsPct','affectedRoutes','affectedCenters','currentDistributionMix','proposedDistributionMix','centersMovedDallasToWhitestown','centersMovedWhitestownToDallas','totalReassignmentSavings','proposedRouteGroups','operationalRisk','confidence','formulaUsed','contractRuleUsed','scheduleRuleUsed','finalStatus','costDifference','costDeltaLabel','rejectionReason']
 };
 
 const SCHEMA = {
@@ -143,13 +146,14 @@ export async function runAiRouteOptimizer(input) {
   try {
     const parsed = JSON.parse(text);
     const deterministicScenarios = networkScenarios.slice(0, Number(maxRoutes)||20).map(scenarioForOutput);
+    const savingsCandidates = deterministicScenarios.filter(s => s.proposedNetworkCost < s.currentNetworkCost);
     return {
       ...parsed,
       scope: 'network-wide',
       currentNetworkCost: Number(currentNetworkCost || 0),
       currentAnnualCost: Number(currentAnnualCost || 0),
       networkScenarios: deterministicScenarios,
-      recommendations: deterministicScenarios,
+      recommendations: savingsCandidates,
       calculationStatus: `${parsed.calculationStatus || 'OpenAI route-group narrative received.'} Deterministic backend math owns all costs, distribution mix, savings proof, and final status labels.`
     };
   }
@@ -180,17 +184,25 @@ function centerLevelData(groups) {
 }
 
 function scenarioForOutput(s) {
+  const currentNetworkCost = Number(s.currentNetworkCost || 0);
+  const proposedNetworkCost = Number(s.proposedNetworkCost || 0);
+  const costDifference = Number(s.costDifference ?? (proposedNetworkCost - currentNetworkCost));
+  const isSavingsCandidate = proposedNetworkCost < currentNetworkCost;
+  const finalStatus = !isSavingsCandidate ? 'Rejected Scenario' : (s.finalStatus || (Number(s.savings || 0) > 0 ? 'Recommended' : 'Needs Contract Validation'));
   return {
     id: s.id,
     scenarioType: s.scenarioType,
     description: s.description,
-    currentNetworkCost: Number(s.currentNetworkCost || 0),
-    proposedNetworkCost: Number(s.proposedNetworkCost || 0),
+    currentNetworkCost,
+    proposedNetworkCost,
+    costDifference,
+    costDeltaLabel: s.costDeltaLabel || (isSavingsCandidate ? '✓ Savings Candidate' : '✗ Cost Increase'),
+    rejectionReason: s.rejectionReason || (!isSavingsCandidate ? `Rejected because proposed total cost ${proposedNetworkCost} is greater than or equal to current total cost ${currentNetworkCost}; cost increase = ${costDifference}.` : ''),
     currentAnnualCost: Number(s.currentAnnualCost || 0),
     proposedAnnualCost: Number(s.proposedAnnualCost || 0),
-    savings: Number(s.savings || 0),
-    annualSavings: Number(s.annualSavings || 0),
-    savingsPct: Number(s.savingsPct || 0),
+    savings: isSavingsCandidate ? Number(s.savings || 0) : 0,
+    annualSavings: isSavingsCandidate ? Number(s.annualSavings || 0) : 0,
+    savingsPct: isSavingsCandidate ? Number(s.savingsPct || 0) : 0,
     affectedRoutes: s.affectedRoutes || [],
     affectedCenters: s.affectedCenters || [],
     currentDistributionMix: s.currentDistributionMix,
@@ -205,12 +217,15 @@ function scenarioForOutput(s) {
     formulaUsed: s.formulaUsed || '',
     contractRuleUsed: typeof s.contractRuleUsed === 'string' ? s.contractRuleUsed : JSON.stringify(s.contractRuleUsed || contractRules()),
     scheduleRuleUsed: s.scheduleRuleUsed || '',
-    finalStatus: s.finalStatus || (s.savings > 0 ? 'Recommended' : 'Not Recommended')
+    baseline: s.baseline || null,
+    proposed: s.proposed || null,
+    finalStatus
   };
 }
 
 function fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCost, reason }) {
   const scenarios = networkScenarios.slice(0, 20).map(scenarioForOutput);
+  const savingsCandidates = scenarios.filter(s => s.proposedNetworkCost < s.currentNetworkCost);
   return {
     summary: 'Network-wide McKesson optimizer generated candidate transportation networks across all open plasma centers.',
     scope: 'network-wide',
@@ -220,7 +235,7 @@ function fallbackResult({ networkScenarios, currentNetworkCost, currentAnnualCos
     currentNetworkCost: Number(currentNetworkCost || 0),
     currentAnnualCost: Number(currentAnnualCost || 0),
     networkScenarios: scenarios,
-    recommendations: scenarios,
+    recommendations: savingsCandidates,
     leadershipSummary: `Top ${scenarios.length} network scenarios compare current total network cost against proposed total network cost across consolidation, splitting, PLC reassignment, pickup-day balancing, and trailer-utilization balancing.` ,
     questionsForMcKesson: [
       'Confirm whether any deadhead, toll, detention, layover, stop, accessorial, or special-handling charges apply beyond the loaded Rate Table/workbook data.',

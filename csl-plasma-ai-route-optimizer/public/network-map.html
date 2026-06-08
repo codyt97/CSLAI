@@ -3747,6 +3747,23 @@ refresh();
     return true;
   }
   function selectedRecommendations(result){ return (result?.networkScenarios || result?.recommendations || []).filter(scenarioAllowed); }
+  function scenarioCostDifference(r){ return Number(r?.costDifference ?? ((Number(r?.proposedNetworkCost)||0) - (Number(r?.currentNetworkCost)||0))); }
+  function isSavingsCandidate(r){ return Number(r?.proposedNetworkCost || 0) < Number(r?.currentNetworkCost || 0); }
+  function candidateRecommendations(result){ return selectedRecommendations(result).filter(isSavingsCandidate); }
+  function rejectedScenarios(result){ return selectedRecommendations(result).filter(r => !isSavingsCandidate(r)); }
+  function costDeltaLabel(r){ return isSavingsCandidate(r) ? '✓ Savings Candidate' : '✗ Cost Increase'; }
+  function costBreakdown(side, displayedTotal){
+    const cb=side?.costBreakdown || {};
+    const linehaul=Number(cb.linehaul ?? side?.linehaul ?? 0);
+    const fuel=Number(cb.fuel ?? side?.fuel ?? 0);
+    const surcharge=Number(cb.surcharge ?? cb.fuel ?? side?.surcharge ?? side?.fuel ?? 0);
+    const stopCharges=Number(cb.stopCharges ?? side?.stopCharges ?? 0);
+    const storage=Number(cb.storage ?? side?.storage ?? 0);
+    const otherCharges=Number(cb.otherCharges ?? side?.otherCharges ?? 0);
+    const accessorials=Number(cb.accessorials ?? side?.accessorials ?? (storage + otherCharges));
+    const totalCost=Number(cb.totalCost ?? side?.totalCost ?? displayedTotal ?? 0);
+    return { linehaul, fuel, surcharge, stopCharges, accessorials, totalCost };
+  }
   function baselineHtml(rows){
     const cov=coverage(rows), curr=distribution(rows,false), prop=distribution(rows,true), mov=movements(rows);
     const currentCost=rows.reduce((a,r)=>a+Number(r.currentTotal||0),0);
@@ -3763,35 +3780,45 @@ refresh();
   }
   function renderDashboard(result=null){
     const rows=includedRows();
-    const recs=selectedRecommendations(result).slice(0,8);
-    $('aiNetworkDashboard').innerHTML = baselineHtml(rows) + scenarioOptionsHtml() + `<section class="opt-exec-section"><div class="opt-section-eyebrow">3. Run AI Optimization</div><h2>Run the network model</h2><p class="mini-note">Click <b>Run AI Network Optimization</b> to analyze all plasma centers, generate route groups, validate contract/schedule/Week A-B/pickup windows, calculate savings, and rank recommendations.</p></section>` + recommendationsHtml(recs, result);
+    const all=selectedRecommendations(result);
+    const recs=all.filter(isSavingsCandidate).slice(0,8);
+    const rejected=all.filter(r => !isSavingsCandidate(r));
+    $('aiNetworkDashboard').innerHTML = baselineHtml(rows) + scenarioOptionsHtml() + `<section class="opt-exec-section"><div class="opt-section-eyebrow">3. Run AI Optimization</div><h2>Run the network model</h2><p class="mini-note">Click <b>Run AI Network Optimization</b> to analyze all plasma centers, generate route groups, validate contract/schedule/Week A-B/pickup windows, calculate savings, and rank recommendations.</p></section>` + recommendationsHtml(recs, rejected, result);
     renderAiNetworkMap(result, rows);
-    renderAiNetworkTable(recs, rows);
+    renderAiNetworkTable(recs, rejected, rows);
   }
-  function recommendationsHtml(recs, result){
-    if(!recs.length) return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations</div><h2>Recommendations will appear after the run</h2><p class="mini-note">AI recommendations, logic trail, and savings proof will show here.</p></section>`;
-    return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations + Proof</div><h2>Ranked Network Recommendations</h2>${recs.map((r,i)=>recCard(r,i)).join('')}</section>`;
+  function recommendationsHtml(recs, rejected, result){
+    if(!result) return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations</div><h2>Recommendations will appear after the run</h2><p class="mini-note">AI recommendations, logic trail, and savings proof will show here.</p></section>`;
+    const candidateHtml = recs.length ? recs.map((r,i)=>recCard(r,i,false)).join('') : `<div class="coverage-warning">No savings candidates passed the filter. A scenario only appears here when proposed total contract cost is lower than current total contract cost.</div>`;
+    const rejectedHtml = rejected.length ? `<h3>Rejected Scenarios</h3><p class="mini-note">These are retained for traceability, but they are not optimization candidates because proposed cost is greater than or equal to current cost.</p>${rejected.map((r,i)=>recCard(r,i,true)).join('')}` : '';
+    return `<section class="opt-exec-section"><div class="opt-section-eyebrow">4-6. AI Recommendations + Proof</div><h2>Ranked Savings Candidates</h2>${candidateHtml}${rejectedHtml}</section>`;
   }
-  function recCard(r,i){
+  function recCard(r,i,rejected=false){
     const groups=r.proposedRouteGroups||[]; const proof=groups[0]?.savingsProof || {};
-    return `<div class="ai-rec-card"><h3>${i+1}. ${esc(r.description || r.scenarioType || r.id || 'Network recommendation')}</h3><div class="ai-proof-grid"><div><span>Affected routes</span><b>${(r.affectedRoutes||[]).length}</b></div><div><span>Affected centers</span><b>${(r.affectedCenters||[]).length}</b></div><div><span>Current PLC</span><b>${esc(groups[0]?.centersIncluded?.[0]?.currentPLC || 'Mixed')}</b></div><div><span>Proposed PLC</span><b>${esc(groups[0]?.proposedPLC || 'Mixed')}</b></div><div><span>Current cost</span><b>${fmtMoney(r.currentNetworkCost)}</b></div><div><span>Proposed cost</span><b>${fmtMoney(r.proposedNetworkCost)}</b></div><div><span>Savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Confidence</span><b>${esc(r.confidence||'')}</b></div><div><span>Risk level</span><b>${esc(r.finalStatus==='Recommended'?'Low':'Needs validation')}</b></div><div><span>Status</span><b>${esc(r.finalStatus||'')}</b></div></div><p><b>Why AI recommends it:</b> ${esc(r.description || r.leadershipSummary || 'Scenario reduces deterministic network cost while preserving route-group validation screens.')}</p><p><b>Logic trail:</b> Data reviewed: center, route, PLC, schedule, cases, pallets, mileage and cost. Rule applied: ${esc(typeof r.contractRuleUsed==='string'?r.contractRuleUsed:'contract, schedule and pallet rules')}. What changed: ${esc((r.affectedRoutes||[]).slice(0,8).join(', '))}. Why savings exist: ${esc(r.formulaUsed||'current cost - proposed cost')}. Human validation: ${esc(r.operationalRisk||'Validate contract and schedule details.')}</p><div class="ai-proof-grid"><div><span>Current charged miles</span><b>${Number(proof.currentTotalChargedMiles||0).toLocaleString()}</b></div><div><span>Proposed charged miles</span><b>${Number(proof.proposedChargedMiles||0).toLocaleString()}</b></div><div><span>Current fuel</span><b>${fmtMoney(r.baseline?.fuel)}</b></div><div><span>Proposed fuel</span><b>${fmtMoney(r.proposed?.fuel)}</b></div><div><span>Current linehaul</span><b>${fmtMoney(r.baseline?.linehaul)}</b></div><div><span>Proposed linehaul</span><b>${fmtMoney(r.proposed?.linehaul)}</b></div><div><span>Current total cost</span><b>${fmtMoney(r.currentNetworkCost)}</b></div><div><span>Proposed total cost</span><b>${fmtMoney(r.proposedNetworkCost)}</b></div><div><span>Weekly savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Annual savings</span><b>${r.finalStatus==='Recommended'?fmtMoney(r.annualSavings):'Estimated — requires validation'}</b></div></div><p><b>Formula used:</b> ${esc(r.formulaUsed||proof.formulaUsed||'weekly savings = current contract cost - proposed contract cost')}</p></div>`;
+    const current=costBreakdown(r.baseline, r.currentNetworkCost);
+    const proposed=costBreakdown(r.proposed, r.proposedNetworkCost);
+    const diff=scenarioCostDifference(r);
+    const status=rejected ? 'Rejected Scenario' : (r.finalStatus || 'Needs Contract Validation');
+    const annualLabel=status==='Recommended'?fmtMoney(r.annualSavings):(isSavingsCandidate(r)?'Estimated savings — requires validation':'No savings — cost increase');
+    return `<div class="ai-rec-card"><h3>${i+1}. ${esc(r.description || r.scenarioType || r.id || (rejected?'Rejected scenario':'Network recommendation'))}</h3><div class="ai-proof-grid"><div><span>Candidate status</span><b>${esc(costDeltaLabel(r))}</b></div><div><span>Cost difference</span><b>${fmtMoney(diff)}</b></div><div><span>Affected routes</span><b>${(r.affectedRoutes||[]).length}</b></div><div><span>Affected centers</span><b>${(r.affectedCenters||[]).length}</b></div><div><span>Current PLC</span><b>${esc(groups[0]?.centersIncluded?.[0]?.currentPLC || 'Mixed')}</b></div><div><span>Proposed PLC</span><b>${esc(groups[0]?.proposedPLC || 'Mixed')}</b></div><div><span>Current cost</span><b>${fmtMoney(r.currentNetworkCost)}</b></div><div><span>Proposed cost</span><b>${fmtMoney(r.proposedNetworkCost)}</b></div><div><span>Savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Confidence</span><b>${esc(r.confidence||'')}</b></div><div><span>Risk level</span><b>${esc(status==='Recommended'?'Low':(rejected?'Cost increase':'Needs validation'))}</b></div><div><span>Status</span><b>${esc(status)}</b></div></div>${rejected?`<div class="coverage-warning">${esc(r.rejectionReason || `Rejected because proposed total cost is greater than or equal to current total cost. Cost increase: ${fmtMoney(diff)}.`)}</div>`:''}<p><b>Why AI recommends it:</b> ${rejected?'Not displayed as an optimization candidate because deterministic math proves a cost increase.':esc(r.description || r.leadershipSummary || 'Scenario reduces deterministic network cost while preserving route-group validation screens.')}</p><p><b>Logic trail:</b> Data reviewed: center, route, PLC, schedule, cases, pallets, mileage and cost. Rule applied: ${esc(typeof r.contractRuleUsed==='string'?r.contractRuleUsed:'contract, schedule and pallet rules')}. What changed: ${esc((r.affectedRoutes||[]).slice(0,8).join(', '))}. Why savings exist: ${esc(r.formulaUsed||'current cost - proposed cost')}. Human validation: ${esc(r.operationalRisk||'Validate contract and schedule details.')}</p><div class="ai-proof-grid"><div><span>Current charged miles</span><b>${Number(proof.currentTotalChargedMiles||r.baseline?.chargedMiles||0).toLocaleString()}</b></div><div><span>Proposed charged miles</span><b>${Number(proof.proposedChargedMiles||r.proposed?.chargedMiles||0).toLocaleString()}</b></div><div><span>Current fuel</span><b>${fmtMoney(current.fuel)}</b></div><div><span>Proposed fuel</span><b>${fmtMoney(proposed.fuel)}</b></div><div><span>Current surcharge</span><b>${fmtMoney(current.surcharge)}</b></div><div><span>Proposed surcharge</span><b>${fmtMoney(proposed.surcharge)}</b></div><div><span>Current linehaul</span><b>${fmtMoney(current.linehaul)}</b></div><div><span>Proposed linehaul</span><b>${fmtMoney(proposed.linehaul)}</b></div><div><span>Current stop charges</span><b>${fmtMoney(current.stopCharges)}</b></div><div><span>Proposed stop charges</span><b>${fmtMoney(proposed.stopCharges)}</b></div><div><span>Current accessorials</span><b>${fmtMoney(current.accessorials)}</b></div><div><span>Proposed accessorials</span><b>${fmtMoney(proposed.accessorials)}</b></div><div><span>Current total cost</span><b>${fmtMoney(current.totalCost)}</b></div><div><span>Proposed total cost</span><b>${fmtMoney(proposed.totalCost)}</b></div><div><span>Weekly savings</span><b>${fmtMoney(r.savings)}</b></div><div><span>Annual savings</span><b>${annualLabel}</b></div></div><p><b>Formula used:</b> ${esc(r.formulaUsed||proof.formulaUsed||'weekly savings = current contract cost - proposed contract cost')}</p></div>`;
   }
   function renderAiNetworkMap(result, rows){
     const mode=$('aiNetworkMapMode')?.value || 'current';
     centerLayer.clearLayers(); lineLayer.clearLayers(); plcLayer.clearLayers(); truckLayer.clearLayers();
     for(const [name,c] of Object.entries(plcCoords)){ if(c) plcLayer.addLayer(L.marker([c.lat,c.lng], {icon:plcIcon(name,colorFor(name))}).bindPopup(`<b>${esc(name)}</b>`)); }
     if(result && mode !== 'current'){
-      const scenario=selectedRecommendations(result)[0];
+      const scenario=candidateRecommendations(result)[0];
       (scenario?.proposedRouteGroups||[]).forEach((g,gi)=>{ const status=String(g.savingsProof?.savingsStatus||'Needs Validation'); const color=mode==='difference'?(status==='Recommended'?'#16a34a':status==='Not Recommended'?'#dc2626':'#f97316'):routeColor(g.proposedGroupName||`AI-${gi}`); const seq=(g.routeSequence||[]).map(x=>(DATA.records||[]).find(r=>String(r.id)===String(x.id)||String(r.centerNumber)===String(x.centerNumber))).filter(r=>r&&r.hasCoords); seq.forEach((r,idx)=>centerLayer.addLayer(L.marker([r.lat,r.lng],{icon:stopIcon(idx+1,color)}).bindPopup(`<b>${esc(g.proposedGroupName)}</b><br>${esc(r.routeName)}<br>Status: ${esc(status)}`))); const p=plcCoords[g.proposedPLC]; if(seq.length&&p) lineLayer.addLayer(L.polyline(seq.map(r=>[r.lat,r.lng]).concat([[p.lat,p.lng]]),{color,weight:4,opacity:.75})); });
       if(mode==='difference'){ coverage(rows).excluded.forEach(x=>{ const r=x.raw; if(r?.hasCoords) centerLayer.addLayer(L.marker([r.lat,r.lng],{icon:markerIcon('#64748b')}).bindPopup(`<b>${esc(r.routeName||'Excluded center')}</b><br>Excluded: ${esc(x.reasons.join('; '))}<br>Missing: ${esc(x.missing.join(', ')||'Filtered/user setting/other')}`)); }); }
     } else {
       rows.slice(0,80).forEach(row => (row.stops||[]).forEach(stop=>{ if(stop.hasCoords) centerLayer.addLayer(L.marker([stop.lat,stop.lng],{icon:markerIcon('#2563eb')}).bindPopup(`<b>${esc(stop.routeName)}</b><br>Current route: ${esc(row.route)}`)); }));
     }
   }
-  function renderAiNetworkTable(recs, rows){
+  function renderAiNetworkTable(recs, rejected, rows){
     const table=$('resultsTable'); if(!table || activeView!=='aiNetwork') return;
-    if(!recs.length){ table.innerHTML='<tbody><tr><td>Run AI Network Optimization to populate recommendation details.</td></tr></tbody>'; return; }
-    table.innerHTML=`<thead><tr><th>Recommendation</th><th>Status</th><th>Current Cost</th><th>Proposed Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Risk</th><th>Formula</th></tr></thead><tbody>${recs.map((r,i)=>`<tr><td>${i+1}. ${esc(r.scenarioType||r.id)}</td><td>${esc(r.finalStatus||'')}</td><td>${fmtMoney(r.currentNetworkCost)}</td><td>${fmtMoney(r.proposedNetworkCost)}</td><td>${fmtMoney(r.savings)}</td><td>${r.finalStatus==='Recommended'?fmtMoney(r.annualSavings):'Estimated — requires validation'}</td><td>${esc(r.operationalRisk||'')}</td><td>${esc(r.formulaUsed||'')}</td></tr>`).join('')}</tbody>`;
+    const all=[...recs, ...rejected];
+    if(!all.length){ table.innerHTML='<tbody><tr><td>Run AI Network Optimization to populate recommendation details.</td></tr></tbody>'; return; }
+    table.innerHTML=`<thead><tr><th>Scenario</th><th>Candidate</th><th>Status</th><th>Cost Difference</th><th>Current Cost</th><th>Proposed Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Risk</th><th>Formula</th></tr></thead><tbody>${all.map((r,i)=>`<tr><td>${i+1}. ${esc(r.scenarioType||r.id)}</td><td>${esc(costDeltaLabel(r))}</td><td>${esc(isSavingsCandidate(r)?(r.finalStatus||'Needs Contract Validation'):'Rejected Scenario')}</td><td>${fmtMoney(scenarioCostDifference(r))}</td><td>${fmtMoney(r.currentNetworkCost)}</td><td>${fmtMoney(r.proposedNetworkCost)}</td><td>${fmtMoney(r.savings)}</td><td>${r.finalStatus==='Recommended'?fmtMoney(r.annualSavings):(isSavingsCandidate(r)?'Estimated — requires validation':'No savings — cost increase')}</td><td>${esc(isSavingsCandidate(r)?(r.operationalRisk||''):(r.rejectionReason||'Proposed cost is not lower than current cost.'))}</td><td>${esc(r.formulaUsed||'')}</td></tr>`).join('')}</tbody>`;
   }
   async function runAi(){
     $('aiNetworkDashboard').innerHTML = baselineHtml(includedRows()) + `<section class="opt-exec-section"><h2>Running AI Network Optimization...</h2><p>Generating route groups, validating rules, and calculating deterministic savings proof.</p></section>`;
@@ -3799,17 +3826,17 @@ refresh();
     const res=await fetch('/api/ai-route-optimizer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const json=await res.json(); if(!res.ok) throw new Error(json.error||'AI network optimization failed'); window.latestAiNetworkResult=json; renderDashboard(json);
   }
   function exportCsv(kind){
-    const rows=[]; const result=window.latestAiNetworkResult||{}; const recs=selectedRecommendations(result); const cov=coverage(includedRows());
+    const rows=[]; const result=window.latestAiNetworkResult||{}; const recs=selectedRecommendations(result); const candidates=candidateRecommendations(result); const cov=coverage(includedRows());
     if(kind==='excluded') {
       rows.push(['Center Name','City','State','Current PLC','Route Name','Exclusion Reason','Missing Data Fields'], ...cov.excluded.map(x=>[x.centerName,x.city,x.state,x.currentPLC,x.routeName,x.reasons.join('; '),x.missing.join('; ')]));
     } else if(kind==='moved-centers') {
-      const top=recs[0]||{}; rows.push(['Center Number','Center Name','City','State','Current PLC','Proposed PLC','Proposed Group']);
+      const top=candidates[0]||{}; rows.push(['Center Number','Center Name','City','State','Current PLC','Proposed PLC','Proposed Group']);
       [...(top.centersMovedDallasToWhitestown||[]), ...(top.centersMovedWhitestownToDallas||[])].forEach(x=>rows.push([x.centerNumber,x.centerName,x.city,x.state,x.currentPLC,x.proposedPLC,x.proposedGroup]));
     } else if(kind==='proof') {
-      rows.push(['Scenario','Group','Current Miles','Proposed Miles','Current Weekly Cost','Proposed Weekly Cost','Weekly Savings','Annual Savings','Formula','Status']);
-      recs.forEach(r => (r.proposedRouteGroups||[]).forEach(g => { const p=g.savingsProof||{}; rows.push([r.id||r.scenarioType,g.proposedGroupName,p.currentTotalChargedMiles,p.proposedChargedMiles,p.currentWeeklyCost,p.proposedWeeklyCost,p.weeklySavings,p.annualSavings,p.formulaUsed,p.savingsStatus]); }));
+      rows.push(['Scenario','Group','Candidate','Cost Difference','Current Miles','Proposed Miles','Current Fuel','Proposed Fuel','Current Surcharge','Proposed Surcharge','Current Linehaul','Proposed Linehaul','Current Stop Charges','Proposed Stop Charges','Current Accessorials','Proposed Accessorials','Current Total Cost','Proposed Total Cost','Weekly Savings','Annual Savings','Formula','Status']);
+      recs.forEach(r => { const c=costBreakdown(r.baseline, r.currentNetworkCost); const pr=costBreakdown(r.proposed, r.proposedNetworkCost); (r.proposedRouteGroups||[]).forEach(g => { const p=g.savingsProof||{}; rows.push([r.id||r.scenarioType,g.proposedGroupName,costDeltaLabel(r),scenarioCostDifference(r),p.currentTotalChargedMiles,p.proposedChargedMiles,c.fuel,pr.fuel,c.surcharge,pr.surcharge,c.linehaul,pr.linehaul,c.stopCharges,pr.stopCharges,c.accessorials,pr.accessorials,c.totalCost,pr.totalCost,p.weeklySavings,p.annualSavings,p.formulaUsed,isSavingsCandidate(r)?p.savingsStatus:'Rejected Scenario']); }); });
     } else {
-      rows.push(['Recommendation','Status','Current Cost','Proposed Cost','Weekly Savings','Annual Savings','Formula'], ...recs.map((r,i)=>[i+1,r.finalStatus,r.currentNetworkCost,r.proposedNetworkCost,r.savings,r.annualSavings,r.formulaUsed]));
+      rows.push(['Recommendation','Candidate','Status','Cost Difference','Current Cost','Proposed Cost','Weekly Savings','Annual Savings','Rejection Reason','Formula'], ...recs.map((r,i)=>[i+1,costDeltaLabel(r),isSavingsCandidate(r)?r.finalStatus:'Rejected Scenario',scenarioCostDifference(r),r.currentNetworkCost,r.proposedNetworkCost,r.savings,r.annualSavings,r.rejectionReason||'',r.formulaUsed]));
     }
     const csv=rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=`ai-network-${kind}.csv`; a.click();
   }
