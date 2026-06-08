@@ -11,6 +11,20 @@ const DATA_FILES = [
   ['casesByCenter.json', 'Cases by center']
 ];
 
+const SOURCE_STATUS_MEANINGS = {
+  'source-parsed-json': 'Loaded from generated runtime JSON.',
+  'fallback-records-json': 'Derived from records.json because newer generated JSON is unavailable.',
+  'generated-warning': 'Generated safe warning/default because source file is unavailable.',
+  missing: 'File unavailable and no fallback exists.'
+};
+
+const SOURCE_STATUS_STYLES = {
+  'source-parsed-json': { background: '#e7f7ed', color: '#146c2e' },
+  'fallback-records-json': { background: '#fff7df', color: '#8a5a00' },
+  'generated-warning': { background: '#fff0e8', color: '#a54400' },
+  missing: { background: '#ffecec', color: '#a00000' }
+};
+
 function money(value) {
   return typeof value === 'number' ? value.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : '—';
 }
@@ -21,6 +35,10 @@ function number(value) {
 
 function percent(value) {
   return typeof value === 'number' ? `${value.toLocaleString()}%` : '—';
+}
+
+function SourceStatusBadge({ status }) {
+  return <span style={{ ...styles.badge, ...(SOURCE_STATUS_STYLES[status] || {}) }}>{status || 'missing'}</span>;
 }
 
 function rowStatus(row) {
@@ -143,6 +161,29 @@ export default function AuditPage() {
 
           {error && <p style={styles.error}>{error}</p>}
           {!dataSummary || !invoiceAudit || !fuelAudit ? <p style={styles.loading}>Loading audit APIs…</p> : null}
+
+          {dataSummary && (
+            <Card title="Data Quality & Source Status">
+              <p style={styles.sourceWarning}>Some audit values may be fallback-derived from records.json when newer generated JSON files are unavailable. Use this dashboard for operational review until source-parsed billing and schedule JSON are loaded.</p>
+              <div style={styles.tableWrap}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr><th style={styles.th}>Data File</th><th style={styles.th}>Record Count</th><th style={styles.th}>Source Status</th><th style={styles.th}>Meaning</th></tr>
+                  </thead>
+                  <tbody>
+                    {(dataSummary.files || []).map((file) => (
+                      <tr key={file.fileName}>
+                        <td style={styles.td}>{file.fileName}</td>
+                        <td style={styles.td}>{number(file.recordCount)}</td>
+                        <td style={styles.td}><SourceStatusBadge status={file.sourceStatus} /></td>
+                        <td style={styles.td}>{SOURCE_STATUS_MEANINGS[file.sourceStatus] || SOURCE_STATUS_MEANINGS.missing}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           {dataSummary && (
             <Card title="Data Source Summary">
@@ -302,7 +343,7 @@ export default function AuditPage() {
               {warnings.length ? (
                 <ul style={styles.list}>
                   {warnings.map((warning, index) => (
-                    <li key={index}>{warning.warning || JSON.stringify(warning)}</li>
+                    <li key={index} style={styles.warningItem}>{warning.warning || JSON.stringify(warning)}</li>
                   ))}
                 </ul>
               ) : <p>No data quality warnings returned.</p>}
@@ -323,6 +364,7 @@ const styles = {
   h2: { margin: '0 0 18px', fontSize: 22 },
   link: { color: '#0b63ce', fontWeight: 700, textDecoration: 'none' },
   warning: { background: '#fff7df', border: '1px solid #f2d27a', borderRadius: 12, padding: 16, lineHeight: 1.5 },
+  sourceWarning: { background: '#fff7df', border: '1px solid #f2d27a', borderRadius: 10, padding: 12, lineHeight: 1.5, marginTop: 0 },
   error: { background: '#ffecec', border: '1px solid #ffb5b5', borderRadius: 12, padding: 16 },
   loading: { padding: 16 },
   note: { color: '#40566f', lineHeight: 1.5, marginTop: 0 },
@@ -336,9 +378,11 @@ const styles = {
   value: { color: '#102033', fontSize: 22, fontWeight: 800 },
   tableWrap: { overflowX: 'auto', marginTop: 18 },
   table: { borderCollapse: 'collapse', minWidth: 640, width: '100%' },
+  badge: { borderRadius: 999, display: 'inline-block', fontSize: 12, fontWeight: 800, padding: '4px 9px', whiteSpace: 'nowrap' },
   reviewTable: { borderCollapse: 'collapse', minWidth: 1500, width: '100%' },
   fuelReviewTable: { borderCollapse: 'collapse', minWidth: 1300, width: '100%' },
   th: { textAlign: 'left', borderBottom: '1px solid #dce6f1', color: '#5d7086', padding: '10px 8px' },
   td: { borderBottom: '1px solid #eef3f8', padding: '10px 8px' },
-  list: { margin: 0, paddingLeft: 22, lineHeight: 1.7 }
+  list: { margin: 0, paddingLeft: 22, lineHeight: 1.7 },
+  warningItem: { marginBottom: 8 }
 };
