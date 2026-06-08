@@ -30,6 +30,14 @@ function rowStatus(row) {
   return row.status || 'OK';
 }
 
+function fuelRowStatus(row) {
+  if (row.status && row.status !== 'OK') return row.status;
+  if (!row.linehaul || row.fuelSurcharge == null || row.actualFuelSurchargePercent == null) return 'Missing Data';
+  if (row.linehaul > 0 && !row.fuelSurcharge) return 'Review';
+  if (Math.abs(Number(row.variancePercent) || 0) > 1) return 'Review';
+  return row.status || 'OK';
+}
+
 function Card({ title, children }) {
   return (
     <section style={styles.card}>
@@ -55,6 +63,8 @@ export default function AuditPage() {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [rowSearch, setRowSearch] = useState('');
+  const [fuelStatusFilter, setFuelStatusFilter] = useState('All');
+  const [fuelSearch, setFuelSearch] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -102,6 +112,18 @@ export default function AuditPage() {
       })
       .slice(0, 50);
   }, [invoiceAudit, rowSearch, statusFilter]);
+
+  const fuelRowsNeedingReview = useMemo(() => {
+    const query = fuelSearch.trim().toLowerCase();
+    return (fuelAudit?.rows || [])
+      .filter((row) => fuelRowStatus(row) !== 'OK' || (row.linehaul > 0 && !row.fuelSurcharge) || Math.abs(Number(row.variancePercent) || 0) > 1 || !row.linehaul || row.fuelSurcharge == null)
+      .filter((row) => fuelStatusFilter === 'All' || fuelRowStatus(row) === fuelStatusFilter)
+      .filter((row) => {
+        if (!query) return true;
+        return [row.routeName, row.centerName, row.centerNumber, row.plc].some((value) => String(value || '').toLowerCase().includes(query));
+      })
+      .slice(0, 50);
+  }, [fuelAudit, fuelSearch, fuelStatusFilter]);
 
   return (
     <html>
@@ -227,6 +249,54 @@ export default function AuditPage() {
             </Card>
           )}
 
+          {fuelAudit && (
+            <Card title="Fuel Surcharge Rows Needing Review">
+              <p style={styles.note}>This table highlights fuel surcharge rows that need review based on the diesel average entered. These are audit flags, not confirmed billing errors.</p>
+              {(fuelAudit.rows || []).length ? (
+                <>
+                  <div style={styles.filters}>
+                    <label style={styles.filterLabel}>
+                      Status
+                      <select value={fuelStatusFilter} onChange={(event) => setFuelStatusFilter(event.target.value)} style={styles.input}>
+                        {['All', 'Review', 'Missing Data', 'Needs Diesel Average'].map((status) => <option key={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <label style={styles.filterLabel}>
+                      Search
+                      <input value={fuelSearch} onChange={(event) => setFuelSearch(event.target.value)} placeholder="Route, center, center #, or PLC" style={styles.input} />
+                    </label>
+                  </div>
+                  {fuelRowsNeedingReview.length ? (
+                    <div style={styles.tableWrap}>
+                      <table style={styles.fuelReviewTable}>
+                        <thead>
+                          <tr>{['Status', 'Route', 'Center', 'Center #', 'PLC', 'Linehaul', 'Fuel Surcharge', 'Actual Fuel %', 'Expected Fuel %', 'Variance %', 'Explanation'].map((heading) => <th key={heading} style={styles.th}>{heading}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {fuelRowsNeedingReview.map((row, index) => (
+                            <tr key={`${row.routeName || 'fuel'}-${row.centerNumber || index}`}>
+                              <td style={styles.td}>{fuelRowStatus(row)}</td>
+                              <td style={styles.td}>{row.routeName || '—'}</td>
+                              <td style={styles.td}>{row.centerName || '—'}</td>
+                              <td style={styles.td}>{row.centerNumber || '—'}</td>
+                              <td style={styles.td}>{row.plc || '—'}</td>
+                              <td style={styles.td}>{money(row.linehaul)}</td>
+                              <td style={styles.td}>{money(row.fuelSurcharge)}</td>
+                              <td style={styles.td}>{percent(row.actualFuelSurchargePercent)}</td>
+                              <td style={styles.td}>{percent(row.expectedFuelSurchargePercent)}</td>
+                              <td style={styles.td}>{percent(row.variancePercent)}</td>
+                              <td style={styles.td}>{row.explanation || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : <p>No fuel surcharge rows match the current filters.</p>}
+                </>
+              ) : <p>No row-level fuel surcharge audit results available from the current data source.</p>}
+            </Card>
+          )}
+
           {dataSummary && (
             <Card title="Data Quality Warnings">
               {warnings.length ? (
@@ -267,6 +337,7 @@ const styles = {
   tableWrap: { overflowX: 'auto', marginTop: 18 },
   table: { borderCollapse: 'collapse', minWidth: 640, width: '100%' },
   reviewTable: { borderCollapse: 'collapse', minWidth: 1500, width: '100%' },
+  fuelReviewTable: { borderCollapse: 'collapse', minWidth: 1300, width: '100%' },
   th: { textAlign: 'left', borderBottom: '1px solid #dce6f1', color: '#5d7086', padding: '10px 8px' },
   td: { borderBottom: '1px solid #eef3f8', padding: '10px 8px' },
   list: { margin: 0, paddingLeft: 22, lineHeight: 1.7 }
