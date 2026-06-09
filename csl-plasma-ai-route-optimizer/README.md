@@ -7,21 +7,6 @@ This project wraps the existing CSL Plasma network HTML app with secure server-s
 - Route-level cost/fuel calculation using Rate Table assumptions
 - AI Route Rebuild Agent using OpenAI
 
-## Deploy to Vercel
-
-1. Upload this folder to GitHub.
-2. Import the repo into Vercel.
-3. Add environment variables:
-
-```env
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-5.5
-GEOAPIFY_API_KEY=your_geoapify_key
-DEFAULT_AVERAGE_TRUCK_SPEED_MPH=55
-```
-
-4. Deploy.
-5. Open the Vercel URL. The site loads `public/network-map.html` inside the Next.js app and the AI buttons call `/api/ai-route-optimizer`.
 
 ## Local data generation
 
