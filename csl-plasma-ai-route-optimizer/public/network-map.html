@@ -3567,6 +3567,397 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
 })();
 
 
+// ===== Clean AI Pickup Group Recommendations: deterministic regrouping scenarios =====
+(function initPickupGroupRecommendations(){
+  const CASES_PER_PALLET_AI = 70;
+  const REEFER_48_MAX_PALLETS_AI = 24;
+  const HIGH_UTILIZATION_PALLETS_AI = 21.6;
+  const UNDERUTILIZED_PALLETS_AI = 12;
+  const DRIVER_DAY_HOURS_AI = 11;
+  const ASSUMED_AVG_MPH_AI = 50;
+  const MOVE_MAX_CENTROID_MILES = 250;
+
+  function rgEsc(value){ return String(value ?? '').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function rgRouteName(r){ return String(getRouteName(r) || '').trim().toUpperCase().replace(/\s+/g,' '); }
+  function rgNodeId(r){ return String(r.id ?? r.centerNumber ?? r.routeName ?? `${r.lat},${r.lng}`); }
+  function rgPallets(cases){ return Math.max(0, (Number(cases)||0) / CASES_PER_PALLET_AI); }
+  function rgPickupDay(r){ return days.find(d=>String(r[d] || r.pickupDays?.[d] || '').trim()) || ''; }
+  function rgWeekType(r){
+    const vals=days.map(d=>String(r[d] || r.pickupDays?.[d] || '')).join('/').toUpperCase();
+    const a=vals.includes('A'), b=vals.includes('B');
+    if(a && b) return 'A/B';
+    if(a) return 'A';
+    if(b) return 'B';
+    return 'A/B';
+  }
+  function rgGroupId(routeName, weekType){ return `${routeName || 'UNKNOWN'}__${weekType || 'A/B'}`; }
+  function rgMostCommon(values){ const counts={}; (values||[]).forEach(v=>{ if(v) counts[v]=(counts[v]||0)+1; }); return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0] || ''; }
+  function rgUnique(values){ return uniqueSorted(values || []); }
+  function rgCenterName(c){ return `${c.centerNumber || ''} ${c.centerName || ''}`.trim() || c.id; }
+  function rgTrailerStatus(pallets){
+    if(!Number.isFinite(Number(pallets))) return 'Needs Data';
+    if(pallets > REEFER_48_MAX_PALLETS_AI) return 'Needs Capacity Review';
+    if(pallets >= HIGH_UTILIZATION_PALLETS_AI) return 'High Utilization';
+    if(pallets < UNDERUTILIZED_PALLETS_AI) return 'Underutilized';
+    return 'OK';
+  }
+  function rgPickupDays(centers){ return rgUnique((centers||[]).map(c=>c.pickupDay).filter(Boolean)); }
+  function rgGroupCentroid(group){
+    const pts=(group.centers||[]).filter(c=>Number.isFinite(c.latitude)&&Number.isFinite(c.longitude));
+    if(!pts.length) return null;
+    return {lat:pts.reduce((a,c)=>a+c.latitude,0)/pts.length, lng:pts.reduce((a,c)=>a+c.longitude,0)/pts.length};
+  }
+  function rgDistanceToGroup(center, group){
+    const c=rgGroupCentroid(group);
+    if(!c || !Number.isFinite(center.latitude) || !Number.isFinite(center.longitude)) return Infinity;
+    return haversineMiles(center.latitude, center.longitude, c.lat, c.lng);
+  }
+  function rgScenarioMiles(group, plc){
+    const stops=(group.centers||[]).map(c=>c.raw).filter(r=>r && r.hasCoords);
+    if(!plcCoords[plc] || !stops.length) return 0;
+    return Math.max(0, Number(sequenceStopsFromPLC(stops, plc).roadMiles)||0);
+  }
+  function rgScenarioCost(group, plc){
+    const miles=rgScenarioMiles(group, plc);
+    const price=priceOptimizationRoute(miles, group.stopCount || group.centers?.length || 0, group.weeklyCases || 0, group.weeklyPallets || 0);
+    return {miles, cost:price.total, linehaul:price.linehaul, fuel:price.fuel};
+  }
+  function rgScheduleCompatible(a,b){
+    if(!a || !b) return false;
+    if(a.weekType && b.weekType && a.weekType!==b.weekType && a.weekType!=='A/B' && b.weekType!=='A/B') return false;
+    const aDays=Array.isArray(a.pickupDays) ? a.pickupDays : rgPickupDays(a.centers || [a]);
+    const bDays=Array.isArray(b.pickupDays) ? b.pickupDays : rgPickupDays(b.centers || [b]);
+    return !aDays.length || !bDays.length || aDays.some(d=>bDays.includes(d));
+  }
+  function rgCloneGroup(group, centers=group.centers){
+    return calculateRouteGroupKpis({groupId:group.groupId, routeName:group.routeName, weekType:group.weekType, plc:group.plc, centers:centers.slice()});
+  }
+  function rgScenarioTotals(groups, field){ return (groups||[]).reduce((a,g)=>a+(Number(g[field])||0),0); }
+  function rgMovedIds(currentGroups, proposedGroups){
+    const before=new Map(); (currentGroups||[]).forEach(g=>(g.centers||[]).forEach(c=>before.set(c.id,g.groupId)));
+    const moved=[]; (proposedGroups||[]).forEach(g=>(g.centers||[]).forEach(c=>{ if(before.has(c.id) && before.get(c.id)!==g.groupId) moved.push(c.id); }));
+    return moved;
+  }
+
+  window.buildCenterNodes=function buildCenterNodes(){
+    return records.filter(r=>{
+      const status=String(r.centerStatus||'').toUpperCase();
+      const route=rgRouteName(r);
+      return r && (status==='OPEN' || status==='SCHEDULED') && !isNotServicedByMckesson(r) && route && route !== '#N/A' && route !== 'UNKNOWN ROUTE';
+    }).map(r=>{
+      const parts=currentCostParts(r);
+      const weeklyCases=Number(r.weeklyCases)||0;
+      return {
+        id:rgNodeId(r), raw:r, centerNumber:r.centerNumber || r.id || '', centerName:r.routeName || r.centerName || r.name || '',
+        currentRoute:rgRouteName(r), currentPLC:endpointPLCFor(r), state:r.state || '', city:r.city || '', latitude:Number(r.lat), longitude:Number(r.lng),
+        pickupDay:rgPickupDay(r), pickupTime:r.pickupHours || '', weekType:rgWeekType(r), weeklyCases, weeklyLiters:Number(r.weeklyLiters)||0,
+        weeklyPallets:rgPallets(weeklyCases), sourceMiles:Number(r.weeklyMiles)||0, sourceCost:parts.total, linehaul:parts.linehaul, fuel:parts.fuel
+      };
+    });
+  };
+
+  window.buildCurrentRouteGroups=function buildCurrentRouteGroups(){
+    const map=new Map();
+    for(const node of window.buildCenterNodes()){
+      const id=rgGroupId(node.currentRoute, node.weekType);
+      if(!map.has(id)) map.set(id,{groupId:id, routeName:node.currentRoute, weekType:node.weekType, centers:[]});
+      map.get(id).centers.push(node);
+    }
+    return [...map.values()].map(window.calculateRouteGroupKpis);
+  };
+
+  window.calculateRouteGroupKpis=function calculateRouteGroupKpis(routeGroup){
+    const centers=routeGroup.centers || [];
+    const weeklyCases=centers.reduce((a,c)=>a+(Number(c.weeklyCases)||0),0);
+    const weeklyLiters=centers.reduce((a,c)=>a+(Number(c.weeklyLiters)||0),0);
+    const weeklyPallets=rgPallets(weeklyCases);
+    const plc=routeGroup.plc || rgMostCommon(centers.map(c=>c.currentPLC)) || 'Dallas PLC';
+    const currentSourceMiles=centers.reduce((a,c)=>a+(Number(c.sourceMiles)||0),0);
+    const currentWeeklyCost=centers.reduce((a,c)=>a+(Number(c.sourceCost)||0),0);
+    const scenario=rgScenarioCost({...routeGroup, centers, weeklyCases, weeklyPallets, stopCount:centers.length}, plc);
+    const plcs=rgUnique(centers.map(c=>c.currentPLC).filter(Boolean));
+    const mixedPLCFlag=plcs.length>1 || (plcs.includes('Dallas PLC') && plcs.includes('Whitestown PLC'));
+    const relayFlag=centers.some(c=>String(c.raw?.routeType||'').toLowerCase()==='relay' || c.raw?.plcChanged || (c.raw?.basePLC && c.raw?.actualPLC && c.raw.basePLC!==c.raw.actualPLC && c.raw.basePLC!=='#N/A' && c.raw.actualPLC!=='#N/A'));
+    const trailerStatus=rgTrailerStatus(weeklyPallets);
+    const validationWarnings=[];
+    if(mixedPLCFlag) validationWarnings.push('Mixed PLC / Relay Validation');
+    if(relayFlag) validationWarnings.push('Relay route requires McKesson validation');
+    if(trailerStatus==='Needs Capacity Review') validationWarnings.push('Needs Capacity Review: over 24-pallet 48 ft reefer capacity');
+    if(scenario.miles / ASSUMED_AVG_MPH_AI > DRIVER_DAY_HOURS_AI) validationWarnings.push('Needs Driver-Time Validation: estimated drive time exceeds 11 hours');
+    if(centers.some(c=>!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude)||!c.weeklyCases)) validationWarnings.push('Needs Data: missing coordinates or volume');
+    return {
+      ...routeGroup, centers, plc, pickupDays:rgPickupDays(centers), stopCount:centers.length, weeklyCases, weeklyLiters, weeklyPallets,
+      currentSourceMiles, proposedScenarioMiles:scenario.miles, currentWeeklyCost, proposedWeeklyCost:scenario.cost,
+      costPerCase:weeklyCases ? currentWeeklyCost/weeklyCases : null, costPerMile:currentSourceMiles ? currentWeeklyCost/currentSourceMiles : null,
+      trailerUtilizationPercent:weeklyPallets/REEFER_48_MAX_PALLETS_AI*100, trailerStatus, mixedPLCFlag, relayFlag, validationWarnings
+    };
+  };
+
+  function rgScoreScenario(currentGroups, proposedGroups){
+    const currentWeeklyCost=rgScenarioTotals(currentGroups,'currentWeeklyCost');
+    const proposedWeeklyCost=rgScenarioTotals(proposedGroups,'proposedWeeklyCost');
+    const weeklyOpportunity=currentWeeklyCost-proposedWeeklyCost;
+    const annualOpportunity=weeklyOpportunity*52;
+    const currentMiles=rgScenarioTotals(currentGroups,'currentSourceMiles');
+    const proposedMiles=rgScenarioTotals(proposedGroups,'proposedScenarioMiles');
+    const disruptionScore=rgMovedIds(currentGroups, proposedGroups).length;
+    const warnings=rgUnique((proposedGroups||[]).flatMap(g=>g.validationWarnings||[]));
+    let confidenceScore=85;
+    if(disruptionScore>3) confidenceScore-=15;
+    if(warnings.some(w=>/Mixed|Relay|McKesson/i.test(w))) confidenceScore-=35;
+    if(warnings.some(w=>/Driver-Time/i.test(w))) confidenceScore-=20;
+    if(warnings.some(w=>/Capacity|Data/i.test(w))) confidenceScore-=35;
+    if((proposedGroups||[]).some(g=>g.plc!==rgMostCommon(g.centers.map(c=>c.currentPLC)))) confidenceScore-=10;
+    confidenceScore=Math.max(10, Math.min(95, confidenceScore));
+    const totalScore=weeklyOpportunity + (currentMiles-proposedMiles)*0.15 - disruptionScore*350 + confidenceScore*20 - warnings.length*250;
+    return {weeklyOpportunity, annualOpportunity, milesOpportunity:currentMiles-proposedMiles, disruptionScore, confidenceScore, totalScore};
+  }
+  function rgConfidenceLabel(score){ return score>=75?'High':score>=45?'Medium':'Low'; }
+  function rgKeepCurrent(group, reason='No actionable regrouping candidates under current constraints.'){
+    const g=rgCloneGroup(group);
+    g.proposedWeeklyCost=group.currentWeeklyCost;
+    g.proposedScenarioMiles=group.currentSourceMiles;
+    return rgMakeScenario('Keep Current Route', [group], [g], {weeklyOpportunity:0, annualOpportunity:0, totalScore:0, explanation:reason, centersMoved:[], movedCenterDetails:[]});
+  }
+  function rgSourceAfter(scenario){ return (scenario.proposedGroups||[]).filter(g=>(scenario.currentGroups||[]).some(cg=>cg.groupId===g.groupId)).reduce((m,g)=>Math.max(m,g.weeklyPallets||0),0); }
+  function rgDestinationAfter(scenario){ return (scenario.proposedGroups||[]).filter(g=>(scenario.centersMoved||[]).some(c=>g.centers.some(gc=>gc.id===c.id))).reduce((m,g)=>Math.max(m,g.weeklyPallets||0),0); }
+  function rgMaxPallets(groups){ return (groups||[]).reduce((m,g)=>Math.max(m, Number(g.weeklyPallets)||0),0); }
+
+  window.validateScenarioFeasibility=function validateScenarioFeasibility(scenario){
+    const currentIds=(scenario.currentGroups||[]).flatMap(g=>(g.centers||[]).map(c=>c.id));
+    const proposedIds=(scenario.proposedGroups||[]).flatMap(g=>(g.centers||[]).map(c=>c.id));
+    const missing=currentIds.filter(id=>!proposedIds.includes(id));
+    const dupes=proposedIds.filter((id,idx,arr)=>arr.indexOf(id)!==idx);
+    const warnings=rgUnique([...(scenario.proposedGroups||[]).flatMap(g=>g.validationWarnings||[]), ...(scenario.validationWarnings||[])]);
+    const missingData=(scenario.proposedGroups||[]).some(g=>(g.centers||[]).some(c=>!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude)||!c.weeklyCases) || !g.currentWeeklyCost || !g.currentSourceMiles);
+    const overCapacity=(scenario.proposedGroups||[]).some(g=>g.weeklyPallets>REEFER_48_MAX_PALLETS_AI || g.trailerStatus==='Needs Capacity Review');
+    const driverTime=warnings.some(w=>/Driver-Time|11 hours/i.test(w));
+    const mixed=warnings.some(w=>/Mixed|Relay|McKesson/i.test(w));
+    if(missing.length || dupes.length) return {feasibilityStatus:'Infeasible', failedConstraints:rgUnique(['Centers dropped or duplicated', ...warnings])};
+    if(overCapacity) return {feasibilityStatus:'Needs Capacity Review', failedConstraints:warnings};
+    if(missingData) return {feasibilityStatus:'Needs Data', failedConstraints:rgUnique(['Missing cost, miles, coordinates, or volume data', ...warnings])};
+    if(driverTime) return {feasibilityStatus:'Needs Driver-Time Validation', failedConstraints:warnings};
+    if(mixed) return {feasibilityStatus:'Needs McKesson Validation', failedConstraints:warnings};
+    return {feasibilityStatus:'Feasible', failedConstraints:warnings};
+  };
+
+  window.classifyScenarioRecommendation=function classifyScenarioRecommendation(scenario){
+    if(scenario.recommendationType==='Keep Current Route' || scenario.weeklyOpportunity<=0) return 'Keep Current';
+    if(scenario.feasibilityStatus==='Infeasible') return 'Infeasible';
+    if(scenario.feasibilityStatus==='Needs Data') return 'Needs Data';
+    if(scenario.feasibilityStatus==='Needs Capacity Review') return 'Infeasible';
+    if(scenario.feasibilityStatus && scenario.feasibilityStatus!=='Feasible') return 'Needs Validation';
+    if(scenario.weeklyOpportunity>=1000 && scenario.disruptionScore<=2 && scenario.confidenceScore>=70) return 'Strong Candidate';
+    if(scenario.weeklyOpportunity>=250) return 'Moderate Candidate';
+    return 'Needs Validation';
+  };
+
+  function rgBucketFor(scenario){
+    if(scenario.recommendationStrength==='Strong Candidate' || scenario.recommendationStrength==='Moderate Candidate') return 'Actionable Candidates';
+    if(scenario.recommendationStrength==='Keep Current' || scenario.recommendationStrength==='Infeasible' || scenario.feasibilityStatus==='Needs Capacity Review') return 'Keep Current / Infeasible';
+    return 'Needs Validation / Exploratory Scenarios';
+  }
+
+  function rgMakeScenario(type, currentGroups, proposedGroups, details={}){
+    const score=rgScoreScenario(currentGroups, proposedGroups);
+    const scenario={
+      id:`pickup-rg-${Math.random().toString(36).slice(2)}`, recommendationType:type, currentGroups, proposedGroups,
+      ...score, confidence:rgConfidenceLabel(score.confidenceScore), centersMoved:[], movedCenterDetails:[], explanation:'', ...details
+    };
+    const feasibility=window.validateScenarioFeasibility(scenario);
+    scenario.feasibilityStatus=feasibility.feasibilityStatus;
+    scenario.failedConstraints=feasibility.failedConstraints || [];
+    scenario.validationRisk=scenario.failedConstraints.join('; ') || 'Requires McKesson repricing and contract mileage validation';
+    scenario.recommendationStrength=window.classifyScenarioRecommendation(scenario);
+    scenario.bucket=rgBucketFor(scenario);
+    scenario.sourceGroupPalletsAfterMove=rgSourceAfter(scenario);
+    scenario.destinationGroupPalletsAfterMove=rgDestinationAfter(scenario);
+    scenario.maxProposedSingleGroupPallets=rgMaxPallets(proposedGroups);
+    return scenario;
+  }
+
+  window.evaluateCenterMove=function evaluateCenterMove(center, fromGroup, toGroup){
+    if(!center || !fromGroup || !toGroup) return null;
+    if(!Number.isFinite(center.latitude)||!Number.isFinite(center.longitude)||!center.weeklyCases) return null;
+    if(fromGroup.groupId===toGroup.groupId) return null;
+    if(!rgScheduleCompatible(center, toGroup)) return null;
+    if((toGroup.weeklyPallets || 0) + center.weeklyPallets > REEFER_48_MAX_PALLETS_AI) return null;
+    const sourceCenters=fromGroup.centers.filter(c=>c.id!==center.id);
+    if(!sourceCenters.length) return null;
+    const toDistance=rgDistanceToGroup(center, toGroup), fromDistance=rgDistanceToGroup(center, fromGroup);
+    if(!Number.isFinite(toDistance) || toDistance>MOVE_MAX_CENTROID_MILES) return null;
+    const newSource=rgCloneGroup(fromGroup, sourceCenters);
+    const newTarget=rgCloneGroup(toGroup, [...toGroup.centers, center]);
+    const score=rgScoreScenario([fromGroup,toGroup], [newSource,newTarget]);
+    if(score.weeklyOpportunity<=0) return null;
+    const disruptionJustified=score.weeklyOpportunity>=250 || toDistance+25<fromDistance;
+    if(!disruptionJustified) return null;
+    return {center, fromGroup, toGroup, proposedGroups:[newSource,newTarget], weeklyOpportunity:score.weeklyOpportunity, distanceImpact:toDistance-fromDistance, reasonMoved:`${toGroup.routeName} is geographically compatible (${fmt1(toDistance)} mi from route centroid) and keeps destination at ${fmt1(newTarget.weeklyPallets)} pallets.`, validationWarning:rgUnique([...newSource.validationWarnings,...newTarget.validationWarnings]).join('; ') || 'Requires contract mileage validation'};
+  };
+
+  window.generateCenterMoveScenarios=function generateCenterMoveScenarios(routeGroups){
+    const scenarios=[];
+    for(const source of routeGroups||[]){
+      for(const center of source.centers||[]){
+        const candidates=(routeGroups||[]).filter(g=>g.groupId!==source.groupId && g.routeName!==source.routeName).map(g=>({group:g,distance:rgDistanceToGroup(center,g)})).filter(x=>Number.isFinite(x.distance)).sort((a,b)=>a.distance-b.distance).slice(0,5);
+        for(const cand of candidates){
+          const move=window.evaluateCenterMove(center, source, cand.group);
+          if(!move) continue;
+          const details={centerNumber:center.centerNumber, centerName:center.centerName, fromRoute:source.routeName, toRoute:cand.group.routeName, reasonMoved:move.reasonMoved, palletImpact:center.weeklyPallets, mileageImpact:move.distanceImpact, validationWarning:move.validationWarning};
+          const scenario=rgMakeScenario('Move Center to Nearby Route', [source,cand.group], move.proposedGroups, {centersMoved:[center], movedCenterDetails:[details], explanation:`Move ${rgCenterName(center)} from ${source.routeName} to ${cand.group.routeName}. ${move.reasonMoved}`});
+          if(scenario.weeklyOpportunity>0) scenarios.push(scenario);
+        }
+      }
+    }
+    return scenarios;
+  };
+
+  window.applyScenarioMoves=function applyScenarioMoves(routeGroups, moves){
+    const map=new Map((routeGroups||[]).map(g=>[g.groupId, rgCloneGroup(g)]));
+    for(const move of moves||[]){
+      const from=map.get(move.fromGroup.groupId), to=map.get(move.toGroup.groupId);
+      if(!from || !to) return null;
+      from.centers=from.centers.filter(c=>c.id!==move.center.id);
+      if(!to.centers.some(c=>c.id===move.center.id)) to.centers.push(move.center);
+      if(!from.centers.length) map.delete(from.groupId);
+    }
+    return [...map.values()].filter(g=>g.centers.length).map(window.calculateRouteGroupKpis);
+  };
+
+  function rgSplitClusters(group){
+    if(group.mixedPLCFlag){
+      const by={};
+      group.centers.forEach(c=>{ const key=c.currentPLC || nearestPLCForStop(c.raw).plc || group.plc; if(!by[key]) by[key]=[]; by[key].push(c); });
+      return Object.values(by).filter(cs=>cs.length);
+    }
+    const sorted=group.centers.slice().sort((a,b)=>(a.longitude||0)-(b.longitude||0));
+    const mid=Math.ceil(sorted.length/2);
+    return [sorted.slice(0,mid), sorted.slice(mid)].filter(cs=>cs.length);
+  }
+
+  window.generateSplitScenarios=function generateSplitScenarios(routeGroup){
+    if(!routeGroup || !(routeGroup.mixedPLCFlag || routeGroup.weeklyPallets>REEFER_48_MAX_PALLETS_AI || routeGroup.stopCount>10 || routeGroup.currentSourceMiles>8000)) return [];
+    const clusters=rgSplitClusters(routeGroup);
+    if(clusters.length<2) return [];
+    const groups=clusters.map((centers,idx)=>window.calculateRouteGroupKpis({groupId:`${routeGroup.groupId}__split_${idx+1}`, routeName:`${routeGroup.routeName} Split ${idx+1}`, weekType:routeGroup.weekType, plc:rgMostCommon(centers.map(c=>c.currentPLC)) || routeGroup.plc, centers}));
+    if(groups.some(g=>g.weeklyPallets>REEFER_48_MAX_PALLETS_AI)) return [];
+    const movedDetails=groups.flatMap(g=>g.centers.map(c=>({centerNumber:c.centerNumber, centerName:c.centerName, fromRoute:routeGroup.routeName, toRoute:g.routeName, reasonMoved:'Route split by PLC/geographic cluster', palletImpact:c.weeklyPallets, mileageImpact:g.proposedScenarioMiles-routeGroup.proposedScenarioMiles, validationWarning:g.validationWarnings.join('; ') || 'Requires contract mileage validation'})));
+    const scenario=rgMakeScenario('Split Route into Smaller Groups', [routeGroup], groups, {centersMoved:groups.flatMap(g=>g.centers), movedCenterDetails:movedDetails, explanation:'Split by PLC/geographic cluster to reduce mixed endpoint, large-route, or capacity validation risk. Requires McKesson repricing and pickup-window validation.'});
+    const reducesInfeasibility=routeGroup.trailerStatus==='Needs Capacity Review' && !groups.some(g=>g.trailerStatus==='Needs Capacity Review');
+    return (scenario.weeklyOpportunity>0 || reducesInfeasibility) ? [scenario] : [];
+  };
+
+  window.generateConsolidationScenarios=function generateConsolidationScenarios(routeGroups){
+    const scenarios=[];
+    const under=(routeGroups||[]).filter(g=>g.weeklyPallets<UNDERUTILIZED_PALLETS_AI);
+    for(let i=0;i<under.length;i++) for(let j=i+1;j<under.length;j++){
+      const a=under[i], b=under[j];
+      if(!rgScheduleCompatible(a,b)) continue;
+      if(a.weeklyPallets+b.weeklyPallets>REEFER_48_MAX_PALLETS_AI) continue;
+      const ca=rgGroupCentroid(a), cb=rgGroupCentroid(b); if(!ca||!cb) continue;
+      if(haversineMiles(ca.lat,ca.lng,cb.lat,cb.lng)>300) continue;
+      const plc=a.plc===b.plc ? a.plc : rgMostCommon([...a.centers,...b.centers].map(c=>c.currentPLC));
+      const merged=window.calculateRouteGroupKpis({groupId:`${a.groupId}__${b.groupId}__consolidated`, routeName:`${a.routeName} + ${b.routeName}`, weekType:a.weekType, plc, centers:[...a.centers,...b.centers]});
+      const movedDetails=b.centers.map(c=>({centerNumber:c.centerNumber, centerName:c.centerName, fromRoute:b.routeName, toRoute:merged.routeName, reasonMoved:'Consolidate underutilized compatible routes', palletImpact:c.weeklyPallets, mileageImpact:merged.proposedScenarioMiles-(a.proposedScenarioMiles+b.proposedScenarioMiles), validationWarning:merged.validationWarnings.join('; ') || 'Requires contract mileage validation'}));
+      const scenario=rgMakeScenario('Consolidate Underutilized Routes', [a,b], [merged], {centersMoved:b.centers, movedCenterDetails:movedDetails, explanation:`Consolidate underutilized compatible routes. Combined volume is ${fmt1(merged.weeklyPallets)} pallets, within 24-pallet max.`});
+      if(scenario.weeklyOpportunity>0) scenarios.push(scenario);
+    }
+    return scenarios;
+  };
+
+  function rgEndpointScenario(group){
+    let best=null;
+    for(const plc of Object.keys(plcCoords).filter(p=>p==='Dallas PLC'||p==='Whitestown PLC')){
+      const g=window.calculateRouteGroupKpis({...group, groupId:`${group.groupId}__${plc}`, plc, centers:group.centers});
+      if(!best || g.proposedWeeklyCost<best.proposedWeeklyCost) best=g;
+    }
+    if(!best) return rgKeepCurrent(group);
+    const type=best.plc===group.plc ? (best.proposedScenarioMiles < group.currentSourceMiles*0.95 ? 'Reorder Stops Only' : 'Keep Current Route') : 'Reassign PLC Endpoint';
+    if(type==='Keep Current Route') return rgKeepCurrent(group);
+    const scenario=rgMakeScenario(type, [group], [best], {centersMoved:[], movedCenterDetails:[], explanation:`${type}: modeled endpoint ${best.plc} lowers scenario cost or miles. Scenario miles are not confirmed billing miles; requires McKesson repricing and contract mileage validation.`});
+    return scenario.weeklyOpportunity>0 ? scenario : rgKeepCurrent(group, 'No positive endpoint or reorder scenario opportunity under current constraints.');
+  }
+
+  window.buildPickupRegroupingScenarios=function buildPickupRegroupingScenarios(groups){
+    const scenarios=[];
+    (groups||[]).forEach(g=>{ scenarios.push(rgEndpointScenario(g)); scenarios.push(...window.generateSplitScenarios(g)); });
+    scenarios.push(...window.generateCenterMoveScenarios(groups));
+    scenarios.push(...window.generateConsolidationScenarios(groups));
+    return scenarios;
+  }
+
+  window.rankRegroupingScenarios=function rankRegroupingScenarios(scenarios){
+    return (scenarios||[]).sort((a,b)=>{
+      const bucketScore={ 'Actionable Candidates':3, 'Needs Validation / Exploratory Scenarios':2, 'Keep Current / Infeasible':1 };
+      return (bucketScore[b.bucket]||0)-(bucketScore[a.bucket]||0) || b.totalScore-a.totalScore;
+    });
+  };
+
+  window.explainRegroupingScenario=function explainRegroupingScenario(scenario){
+    if(!scenario) return '';
+    if(scenario.bucket==='Actionable Candidates') return `${scenario.explanation || scenario.recommendationType}. Actionable only as a scenario opportunity; validate pricing before implementation.`;
+    if(scenario.bucket==='Needs Validation / Exploratory Scenarios') return `${scenario.explanation || scenario.recommendationType}. Exploratory because constraints require validation: ${scenario.validationRisk}.`;
+    return scenario.explanation || 'No actionable regrouping candidates under current constraints.';
+  };
+
+  function rgRouteNames(s){ return rgUnique((s.currentGroups||[]).map(g=>g.routeName)).join(', '); }
+  function rgProposedNames(s){ return rgUnique((s.proposedGroups||[]).map(g=>`${g.routeName} → ${g.plc}`)).join(' / '); }
+  function rgMovedNames(s){ return rgUnique((s.centersMoved||[]).map(rgCenterName)); }
+  window.getPickupGroupScenarios=function getPickupGroupScenarios(){
+    const groups=window.buildCurrentRouteGroups();
+    let scenarios=window.rankRegroupingScenarios(window.buildPickupRegroupingScenarios(groups)).filter(s=>s.weeklyOpportunity>0 || s.recommendationStrength==='Keep Current' || s.feasibilityStatus==='Needs Capacity Review');
+    const selected=$('optRouteFilter')?.value || '';
+    if(selected){
+      scenarios=scenarios.filter(s=>rgRouteNames(s).includes(selected) || rgProposedNames(s).includes(selected));
+      if(!scenarios.some(s=>s.bucket!=='Keep Current / Infeasible' && s.weeklyOpportunity>0)){
+        const g=groups.find(x=>x.routeName===selected);
+        if(g) scenarios.unshift(rgKeepCurrent(g));
+      }
+    }
+    return scenarios;
+  }
+
+  window.renderPickupGroupRecommendations=function renderPickupGroupRecommendations(){
+    if(activeView !== 'optimization') return;
+    const panel=$('optimizationPanel'); if(!panel) return;
+    let box=$('aiPickupGroupRecommendations');
+    if(!box){
+      box=document.createElement('div'); box.id='aiPickupGroupRecommendations'; box.className='ai-optimizer-card';
+      const anchor=$('optRoutingStatus')?.parentElement?.parentElement || panel.querySelector('.button-row') || panel;
+      anchor.insertAdjacentElement('afterend', box);
+    }
+    const scenarios=window.getPickupGroupScenarios();
+    window.aiPickupGroupScenarios=scenarios;
+    const buckets=['Actionable Candidates','Needs Validation / Exploratory Scenarios','Keep Current / Infeasible'];
+    const renderRows=(bucket)=>scenarios.filter(s=>s.bucket===bucket).slice(0, bucket==='Keep Current / Infeasible'?8:15).map((s,idx)=>{
+      const moved=rgMovedNames(s), currentCost=rgScenarioTotals(s.currentGroups,'currentWeeklyCost'), proposedCost=rgScenarioTotals(s.proposedGroups,'proposedWeeklyCost');
+      return `<tr><td>${idx+1}</td><td>${rgEsc(s.bucket)}</td><td>${rgEsc(s.recommendationType)}</td><td>${rgEsc(rgRouteNames(s))}</td><td>${rgEsc(rgProposedNames(s))}</td><td>${moved.length}</td><td>${moved.length?rgEsc(moved.join('; ')):'—'}</td><td>${money2(currentCost)}</td><td>${money2(proposedCost)}</td><td>${money2(s.weeklyOpportunity)}</td><td>${money2(s.annualOpportunity)}</td><td>${fmt1(s.sourceGroupPalletsAfterMove)}</td><td>${fmt1(s.destinationGroupPalletsAfterMove)}</td><td>${fmt1(s.maxProposedSingleGroupPallets)}</td><td>${rgEsc(s.feasibilityStatus)}</td><td>${rgEsc(s.recommendationStrength)}</td><td>${rgEsc(s.confidence)}</td><td>${rgEsc(s.validationRisk)}</td><td><button class="action" type="button" onclick="window.showPickupGroupScenarioDetails('${s.id}')">View Details</button></td></tr>`;
+    }).join('');
+    const header='<thead><tr><th>Rank</th><th>Bucket</th><th>Recommendation Type</th><th>Current Route(s)</th><th>Proposed Group</th><th>Centers Moved Count</th><th>Centers Moved</th><th>Current Weekly Cost</th><th>Proposed Weekly Cost</th><th>Weekly Opportunity</th><th>Annual Opportunity</th><th>Source Group Pallets After Move</th><th>Destination Group Pallets After Move</th><th>Max Proposed Single Group Pallets</th><th>Feasibility Status</th><th>Recommendation Strength</th><th>Confidence</th><th>Validation Warning</th><th>View Details</th></tr></thead>';
+    const sections=buckets.map(bucket=>{
+      const rows=renderRows(bucket);
+      const empty=bucket==='Actionable Candidates' ? 'No actionable regrouping candidates under current constraints.' : `No ${bucket.toLowerCase()} found under current filters.`;
+      return `<h3>${rgEsc(bucket)}</h3><div class="table-wrap"><table class="review-table">${header}<tbody>${rows || `<tr><td colspan="19">${rgEsc(empty)}</td></tr>`}</tbody></table></div>`;
+    }).join('');
+    box.innerHTML=`<h2>AI Pickup Group Recommendations</h2><div class="mini-note">Deterministic regrouping scenarios. Scenario opportunity only; scenario miles are not confirmed billing miles and require McKesson repricing / contract mileage validation.</div>${sections}<div id="aiPickupGroupDetails" class="ai-output"></div>`;
+  };
+
+  window.showPickupGroupScenarioDetails=function showPickupGroupScenarioDetails(id){
+    const s=(window.aiPickupGroupScenarios||[]).find(x=>x.id===id); const box=$('aiPickupGroupDetails'); if(!s||!box) return;
+    const moveRows=(s.movedCenterDetails||[]).map(m=>`<tr><td>${rgEsc(m.centerNumber)}</td><td>${rgEsc(m.centerName)}</td><td>${rgEsc(m.fromRoute)}</td><td>${rgEsc(m.toRoute)}</td><td>${rgEsc(m.reasonMoved)}</td><td>${fmt1(m.palletImpact)}</td><td>${fmt1(m.mileageImpact)}</td><td>${rgEsc(m.validationWarning)}</td></tr>`).join('');
+    const moveTable=moveRows ? `<table class="review-table"><thead><tr><th>Center #</th><th>Center Name</th><th>From Route</th><th>To Route</th><th>Reason Moved</th><th>Pallet Impact</th><th>Mileage Impact</th><th>Validation Warning</th></tr></thead><tbody>${moveRows}</tbody></table>` : 'No center moves met the feasibility and opportunity rules.';
+    const actionable=s.bucket==='Actionable Candidates' ? 'Actionable candidate' : 'Exploratory / not actionable without validation';
+    box.innerHTML=`<div class="ai-title">AI Pickup Group Recommendation Details</div><b>Bucket:</b> ${rgEsc(s.bucket)}<br><b>Actionability:</b> ${rgEsc(actionable)}<br><b>Why:</b> ${rgEsc(window.explainRegroupingScenario(s))}<br><b>Failed constraints:</b> ${rgEsc((s.failedConstraints||[]).join('; ') || 'None identified')}<br><b>McKesson/contract validation needed:</b> McKesson repricing, contract mileage validation, pickup day/time confirmation, driver-hours check, and PLC capacity confirmation.<br><br><b>Moved centers:</b><br>${moveTable}`;
+  };
+
+  const priorRegroupingRefresh=refreshOptimization;
+  refreshOptimization=function(){
+    priorRegroupingRefresh();
+    window.renderPickupGroupRecommendations();
+  };
+})();
+
+
 refresh();
 
 
