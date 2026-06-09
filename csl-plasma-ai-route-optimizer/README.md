@@ -23,6 +23,16 @@ DEFAULT_AVERAGE_TRUCK_SPEED_MPH=55
 4. Deploy.
 5. Open the Vercel URL. The site loads `public/network-map.html` inside the Next.js app and the AI buttons call `/api/ai-route-optimizer`.
 
+## Local data generation
+
+Raw files in `source-data/` are local/private working files and should not be committed. To regenerate source-parsed runtime JSON on a local machine that has those Excel/Word files, run:
+
+```bash
+node scripts/build-data.mjs
+```
+
+The script writes the generated runtime artifacts to `lib/data/*.json`, which are the JSON files the app and audit APIs use at runtime. Keep raw `.xlsx`, `.docx`, and `.pdf` files out of git.
+
 ## Important calculation rules
 
 - Plasma centers are stops inside route groups, not individual shipments.
