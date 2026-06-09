@@ -51,7 +51,7 @@ export async function runAiRouteOptimizer(input) {
       'Use 70 cases per pallet.',
       'Use 24 pallets as the 48 ft refrigerated trailer max; flag >24 as Over Capacity, 21.6-24 as High Utilization, and <12 as Underutilized.',
       'Flag >11 driver hours as a validation warning.',
-      'Do not claim savings unless current full route group is compared to proposed full route group.'
+      'Use scenario opportunity language unless contract rating or McKesson repricing validates invoice impact.'
     ],
     routeGroups: groups.map(g => ({
       routeName: g.routeName, stopCount: g.stopCount, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType,
