@@ -52,6 +52,19 @@ function addDays(value, days) {
   return { date: iso, status: date < new Date() ? ALLOWED_STATUS.EXPIRED : ALLOWED_STATUS.OK };
 }
 
+function centerNameLookup(records) {
+  const lookup = new Map();
+  for (const record of rowsFromPayload(records)) {
+    const centerNumber = firstValue(record, ['centerNumber', 'centerId', 'id']);
+    const centerName = firstValue(record, ['centerName', 'name', 'routeName']);
+    if (!centerNumber || !centerName) continue;
+    lookup.set(String(centerNumber).trim(), centerName);
+    const numericKey = String(Number(centerNumber));
+    if (numericKey !== 'NaN') lookup.set(numericKey, centerName);
+  }
+  return lookup;
+}
+
 function billingRows(summary) {
   const billingSummary = summary.files.find((file) => file.fileName === 'billingFY26.json');
   let rows = [];
@@ -62,10 +75,10 @@ function billingRows(summary) {
   return { billingSummary, rows };
 }
 
-function auditRow(row) {
+function auditRow(row, centerNames) {
   const routeName = firstValue(row, ['routeNameMckesson', 'routeName', 'route', 'mckessonRoute']);
-  const centerName = firstValue(row, ['centerName', 'name']);
   const centerNumber = firstValue(row, ['centerNumber', 'centerId', 'id']);
+  const centerName = firstValue(row, ['centerName', 'name']) || centerNames.get(String(centerNumber || '').trim()) || centerNames.get(String(Number(centerNumber)));
   const plc = firstValue(row, ['actualPLC', 'basePLC', 'plc', 'originPLC']);
   const cases = numberValue(row, ['weeklyCases', 'cases', 'caseCount']);
   const miles = numberValue(row, ['weeklyMiles', 'miles', 'routeMiles']);
@@ -132,7 +145,8 @@ function sum(rows, field) {
 export function getInvoiceAudit() {
   const summary = getDataSummary();
   const { billingSummary, rows } = billingRows(summary);
-  const results = rows.map(auditRow);
+  const centerNames = centerNameLookup(readJson('records.json'));
+  const results = rows.map((row) => auditRow(row, centerNames));
   const totalLinehaul = sum(results, 'linehaul');
   const totalFuelSurcharge = sum(results, 'fuelSurcharge');
   const totalCost = sum(results, 'totalCost');
