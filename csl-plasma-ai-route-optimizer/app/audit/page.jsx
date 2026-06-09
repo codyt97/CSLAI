@@ -174,7 +174,7 @@ export default function AuditPage() {
   }, [fuelAudit, fuelSearch, fuelStatusFilter]);
 
   function exportInvoiceRows() {
-    downloadCsv('invoice-review-rows.csv', ['Status', 'Route', 'Center', 'Center Number', 'PLC', 'Invoice Date', 'Pickup Date', 'Dispute Deadline', 'Overcharge Deadline', 'Cases', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Total Cost', 'Cost Per Case', 'Cost Per Mile', 'Explanation'], invoiceRowsNeedingReview.map((row) => [rowStatus(row), row.routeName, row.centerName, row.centerNumber, row.plc, row.invoiceDate, row.pickupDate, row.invoiceDisputeDeadline, row.overchargeUnderchargeDeadline, row.cases, row.miles, row.linehaul, row.fuelSurcharge, row.totalCost, row.costPerCase, row.costPerMile, row.explanation]));
+    downloadCsv('invoice-review-rows.csv', ['Status', 'Route', 'Center', 'Center Number', 'PLC', 'Cases', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Total Cost', 'Cost Per Case', 'Cost Per Mile', 'Explanation'], invoiceRowsNeedingReview.map((row) => [rowStatus(row), row.routeName, row.centerName, row.centerNumber, row.plc, row.cases, row.miles, row.linehaul, row.fuelSurcharge, row.totalCost, row.costPerCase, row.costPerMile, row.explanation]));
   }
 
   function exportFuelRows() {
@@ -337,7 +337,7 @@ export default function AuditPage() {
                     <div style={styles.tableWrap}>
                       <table style={styles.reviewTable}>
                         <thead>
-                          <tr>{['Status', 'Route', 'Center', 'Center #', 'PLC', 'Invoice Date', 'Pickup Date', 'Dispute Deadline', 'Overcharge Deadline', 'Cases', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Total Cost', 'Cost / Case', 'Cost / Mile', 'Explanation'].map((heading) => <th key={heading} style={styles.th}>{heading}</th>)}</tr>
+                          <tr>{['Status', 'Route', 'Center', 'Center #', 'PLC', 'Cases', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Total Cost', 'Cost / Case', 'Cost / Mile', 'Explanation'].map((heading) => <th key={heading} style={styles.th}>{heading}</th>)}</tr>
                         </thead>
                         <tbody>
                           {invoiceRowsNeedingReview.map((row, index) => (
@@ -347,10 +347,6 @@ export default function AuditPage() {
                               <td style={styles.td}>{row.centerName || '—'}</td>
                               <td style={styles.td}>{row.centerNumber || '—'}</td>
                               <td style={styles.td}>{row.plc || '—'}</td>
-                              <td style={styles.td}>{row.invoiceDate || '—'}</td>
-                              <td style={styles.td}>{row.pickupDate || '—'}</td>
-                              <td style={styles.td}>{row.invoiceDisputeDeadline || '—'}</td>
-                              <td style={styles.td}>{row.overchargeUnderchargeDeadline || '—'}</td>
                               <td style={styles.td}>{number(row.cases)}</td>
                               <td style={styles.td}>{number(row.miles)}</td>
                               <td style={styles.td}>{money(row.linehaul)}</td>

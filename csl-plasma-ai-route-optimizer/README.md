@@ -40,8 +40,7 @@ The script writes the generated runtime artifacts to `lib/data/*.json`, which ar
 - Chargeable miles start at first pickup and end at destination PLC.
 - Collection center routes use 48 ft refrigerated trailers only.
 - 70 cases = 1 pallet.
-- 48 ft refrigerated trailer max capacity is 24 pallets; >24 is Over Capacity, 21.6-24 is High Utilization, and <12 is Underutilized.
-- >11 driver hours is a validation warning.
+- >18 pallets and >11 driver hours are validation warnings.
 
 ## API endpoints
 
