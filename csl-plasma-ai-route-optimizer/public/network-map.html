@@ -2899,6 +2899,272 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
   };
 
 
+  function firstPickupDayForNode(r){
+    const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    for(const d of days) if(r[d] || r.pickupDays?.[d]) return d;
+    return '';
+  }
+  function weekTypeForNode(r){
+    const a=Boolean(getWeekPatternA(r));
+    const b=Boolean(getWeekPatternB(r));
+    if(a && !b) return 'A';
+    if(b && !a) return 'B';
+    return 'A/B';
+  }
+  function centerNodeId(r){ return String(r.id ?? r.centerNumber ?? r.routeName); }
+  function routeGroupId(route, weekType){ return `${route || 'UNKNOWN'}__${weekType || 'A/B'}`; }
+  function buildCenterNodes(){
+    return records.filter(r=>r && r.hasCoords && String(r.centerStatus||'').toUpperCase()==='OPEN' && !isNotServicedByMckesson(r) && getRouteName(r) && getRouteName(r) !== '#N/A').map(r=>{
+      const parts=currentCostParts(r);
+      const weeklyCases=Number(r.weeklyCases)||0;
+      return {
+        id:centerNodeId(r), raw:r, centerNumber:r.centerNumber || r.id || '', centerName:r.routeName || r.centerName || r.name || '',
+        currentRoute:getRouteName(r), currentPLC:endpointPLCFor(r), state:r.state || '', city:r.city || '', latitude:r.lat, longitude:r.lng,
+        pickupDay:firstPickupDayForNode(r), pickupTime:r.pickupHours || '', weekType:weekTypeForNode(r), weeklyCases, weeklyLiters:Number(r.weeklyLiters)||0,
+        weeklyPallets:palletsFromCases(weeklyCases), sourceMiles:Number(r.weeklyMiles)||0, sourceCost:parts.total, linehaul:parts.linehaul, fuel:parts.fuel
+      };
+    });
+  }
+  function mostCommonValue(values){ const counts={}; (values||[]).forEach(v=>{ if(v) counts[v]=(counts[v]||0)+1; }); return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0] || ''; }
+  function buildCurrentRouteGroups(){
+    const map=new Map();
+    for(const node of buildCenterNodes()){
+      const id=routeGroupId(node.currentRoute, node.weekType);
+      if(!map.has(id)) map.set(id,{groupId:id, routeName:node.currentRoute, weekType:node.weekType, centers:[]});
+      map.get(id).centers.push(node);
+    }
+    return [...map.values()].map(calculateRouteGroupKpis);
+  }
+  function groupCentroid(group){
+    const pts=(group.centers||[]).filter(c=>Number.isFinite(c.latitude)&&Number.isFinite(c.longitude));
+    if(!pts.length) return null;
+    return {lat:pts.reduce((a,c)=>a+c.latitude,0)/pts.length, lng:pts.reduce((a,c)=>a+c.longitude,0)/pts.length};
+  }
+  function routeGroupScenarioMiles(group, plc){
+    const p=plcCoords[plc];
+    const stops=(group.centers||[]).map(c=>c.raw).filter(r=>r&&r.hasCoords);
+    if(!p || !stops.length) return 0;
+    const seq=sequenceStopsFromPLC(stops, plc);
+    return Math.max(0, Number(seq.roadMiles)||0);
+  }
+  function routeGroupScenarioCost(group, plc){
+    const miles=routeGroupScenarioMiles(group, plc);
+    const price=priceOptimizationRoute(miles, group.centers?.length || 0, group.weeklyCases || 0, group.weeklyPallets || 0);
+    return {miles, cost:price.total, linehaul:price.linehaul, fuel:price.fuel};
+  }
+  function pickupDaysForCenters(centers){ return uniqueSorted((centers||[]).map(c=>c.pickupDay).filter(Boolean)); }
+  function routeTrailerStatus(pallets){
+    if(pallets > COLLECTION_TRAILER.planningPalletThreshold) return 'Over Capacity';
+    if(pallets >= COLLECTION_TRAILER.highUtilizationThreshold) return 'High Utilization';
+    if(pallets < COLLECTION_TRAILER.underutilizedThreshold) return 'Underutilized';
+    return 'OK';
+  }
+  function calculateRouteGroupKpis(routeGroup){
+    const centers=routeGroup.centers || [];
+    const weeklyCases=centers.reduce((a,c)=>a+(Number(c.weeklyCases)||0),0);
+    const weeklyLiters=centers.reduce((a,c)=>a+(Number(c.weeklyLiters)||0),0);
+    const weeklyPallets=palletsFromCases(weeklyCases);
+    const plc=routeGroup.plc || mostCommonValue(centers.map(c=>c.currentPLC)) || 'Dallas PLC';
+    const currentSourceMiles=centers.reduce((a,c)=>a+(Number(c.sourceMiles)||0),0);
+    const currentWeeklyCost=centers.reduce((a,c)=>a+(Number(c.sourceCost)||0),0);
+    const scenario=routeGroupScenarioCost({...routeGroup, centers, weeklyCases, weeklyPallets}, plc);
+    const plcs=uniqueSorted(centers.map(c=>c.currentPLC).filter(Boolean));
+    const mixedPLCFlag=plcs.length>1 || (plcs.includes('Dallas PLC') && plcs.includes('Whitestown PLC'));
+    const relayFlag=centers.some(c=>String(c.raw?.routeType||'').toLowerCase()==='relay' || c.raw?.plcChanged || (c.raw?.basePLC && c.raw?.actualPLC && c.raw.basePLC!==c.raw.actualPLC && c.raw.basePLC!=='#N/A' && c.raw.actualPLC!=='#N/A'));
+    const trailerStatus=routeTrailerStatus(weeklyPallets);
+    const validationWarnings=[];
+    if(mixedPLCFlag) validationWarnings.push('Mixed PLC / Relay Validation');
+    if(relayFlag) validationWarnings.push('Relay route requires McKesson validation');
+    if(trailerStatus==='Over Capacity') validationWarnings.push('Over 24-pallet 48 ft reefer capacity');
+    if(scenario.miles / ASSUMED_AVG_MPH > DRIVER_DAILY_LIMIT_HOURS) validationWarnings.push('Estimated drive time exceeds 11 hours');
+    if(centers.some(c=>!c.pickupDay)) validationWarnings.push('Missing pickup day/time window');
+    return {
+      ...routeGroup, centers, plc, pickupDays:pickupDaysForCenters(centers), stopCount:centers.length, weeklyCases, weeklyLiters, weeklyPallets,
+      currentSourceMiles, proposedScenarioMiles:scenario.miles, currentWeeklyCost, proposedWeeklyCost:scenario.cost,
+      costPerCase:weeklyCases ? currentWeeklyCost/weeklyCases : null, costPerMile:currentSourceMiles ? currentWeeklyCost/currentSourceMiles : null,
+      trailerUtilizationPercent:(weeklyPallets/COLLECTION_TRAILER.planningPalletThreshold)*100, trailerStatus, mixedPLCFlag, relayFlag, validationWarnings
+    };
+  }
+  function scheduleCompatible(a,b){
+    if(!a || !b) return true;
+    if(a.weekType && b.weekType && a.weekType!==b.weekType && a.weekType!=='A/B' && b.weekType!=='A/B') return false;
+    const aDays=pickupDaysForCenters(a.centers || [a]);
+    const bDays=pickupDaysForCenters(b.centers || [b]);
+    return !aDays.length || !bDays.length || aDays.some(d=>bDays.includes(d));
+  }
+  function compatibleGroupWithCenter(center, group){
+    if(!center || !group) return false;
+    if(center.weekType!==group.weekType && center.weekType!=='A/B' && group.weekType!=='A/B') return false;
+    if(center.pickupDay && group.pickupDays?.length && !group.pickupDays.includes(center.pickupDay)) return false;
+    return group.weeklyPallets + center.weeklyPallets <= COLLECTION_TRAILER.planningPalletThreshold;
+  }
+  function distanceToGroup(center, group){
+    const c=groupCentroid(group); if(!c) return Infinity;
+    return haversineMiles(center.latitude, center.longitude, c.lat, c.lng);
+  }
+  function findNearbyCompatibleRoutes(center, routeGroups){
+    return (routeGroups||[]).filter(g=>g.routeName!==center.currentRoute && compatibleGroupWithCenter(center,g)).map(g=>({group:g, distance:distanceToGroup(center,g)})).filter(x=>Number.isFinite(x.distance)).sort((a,b)=>a.distance-b.distance).slice(0,5);
+  }
+  function cloneGroup(g, centers=g.centers){ return calculateRouteGroupKpis({groupId:g.groupId, routeName:g.routeName, weekType:g.weekType, plc:g.plc, centers:centers.slice()}); }
+  function buildProposedRouteGroups(routeGroups, options={}){
+    const map=new Map((routeGroups||[]).map(g=>[g.groupId, cloneGroup(g)]));
+    if(options.replaceGroups) for(const g of options.replaceGroups) map.set(g.groupId, calculateRouteGroupKpis(g));
+    if(options.removeGroupIds) for(const id of options.removeGroupIds) map.delete(id);
+    if(options.addGroups) for(const g of options.addGroups) map.set(g.groupId, calculateRouteGroupKpis(g));
+    return [...map.values()].filter(g=>g.centers.length);
+  }
+  function scenarioAffectedGroups(scenario){ return scenario.proposedGroups.filter(g=>(scenario.affectedRouteNames||[]).includes(g.routeName) || (scenario.proposedGroupIds||[]).includes(g.groupId)); }
+  function scenarioCost(groups){ return (groups||[]).reduce((a,g)=>a+(Number(g.currentWeeklyCost)||0),0); }
+  function scenarioProposedCost(groups){ return (groups||[]).reduce((a,g)=>a+(Number(g.proposedWeeklyCost)||0),0); }
+  function movedCenterIds(currentGroups, proposedGroups){
+    const before=new Map(); currentGroups.forEach(g=>g.centers.forEach(c=>before.set(c.id,g.groupId)));
+    const moved=[]; proposedGroups.forEach(g=>g.centers.forEach(c=>{ if(before.get(c.id) && before.get(c.id)!==g.groupId) moved.push(c.id); }));
+    return moved;
+  }
+  function scoreRegroupingScenario(currentGroups, proposedGroups){
+    const currentWeeklyCost=scenarioCost(currentGroups);
+    const proposedWeeklyCost=scenarioProposedCost(proposedGroups);
+    const weeklyOpportunity=currentWeeklyCost-proposedWeeklyCost;
+    const annualOpportunity=weeklyOpportunity*52;
+    const milesOpportunity=currentGroups.reduce((a,g)=>a+(Number(g.currentSourceMiles)||0),0)-proposedGroups.reduce((a,g)=>a+(Number(g.proposedScenarioMiles)||0),0);
+    const currentUtil=currentGroups.reduce((a,g)=>a+Math.min(g.weeklyPallets,24),0)/(Math.max(1,currentGroups.length)*24);
+    const proposedUtil=proposedGroups.reduce((a,g)=>a+Math.min(g.weeklyPallets,24),0)/(Math.max(1,proposedGroups.length)*24);
+    const disruptionScore=movedCenterIds(currentGroups, proposedGroups).length;
+    const routeCountChange=proposedGroups.length-currentGroups.length;
+    const warnings=uniqueSorted(proposedGroups.flatMap(g=>g.validationWarnings));
+    const overCapacity=proposedGroups.some(g=>g.trailerStatus==='Over Capacity');
+    let confidenceScore=85;
+    if(disruptionScore>2) confidenceScore-=15;
+    if(warnings.some(w=>/Mixed|Relay/i.test(w))) confidenceScore-=25;
+    if(warnings.some(w=>/Missing|11 hours/i.test(w))) confidenceScore-=15;
+    if(overCapacity) confidenceScore-=35;
+    if(proposedGroups.some(g=>g.plc!==mostCommonValue(g.centers.map(c=>c.currentPLC)))) confidenceScore-=10;
+    confidenceScore=Math.max(10, Math.min(95, confidenceScore));
+    const validationRisk=warnings.join('; ') || 'Requires McKesson repricing and contract mileage validation';
+    const totalScore=weeklyOpportunity + (milesOpportunity*0.2) + ((proposedUtil-currentUtil)*1000) - (disruptionScore*450) - warnings.length*300 + confidenceScore*20;
+    return {weeklyOpportunity, annualOpportunity, milesOpportunity, palletUtilizationImprovement:(proposedUtil-currentUtil)*100, routeCountChange, disruptionScore, confidenceScore, validationRisk, totalScore};
+  }
+  function confidenceLabel(score){ return score>=75?'High':score>=45?'Medium':'Low'; }
+  function makeScenario(type, currentGroups, proposedGroups, details={}){
+    const score=scoreRegroupingScenario(currentGroups, proposedGroups);
+    return {id:`ai-pickup-${Math.random().toString(36).slice(2)}`, recommendationType:type, currentGroups, proposedGroups, ...score, confidence:confidenceLabel(score.confidenceScore), ...details};
+  }
+  function proposePLCReassignment(routeGroup){
+    const current=[routeGroup]; let best=null;
+    for(const plc of Object.keys(plcCoords).filter(p=>p==='Dallas PLC'||p==='Whitestown PLC')){
+      const g=calculateRouteGroupKpis({...routeGroup, groupId:`${routeGroup.groupId}__${plc}`, plc, centers:routeGroup.centers});
+      if(!best || g.proposedWeeklyCost<best.proposedWeeklyCost) best=g;
+    }
+    if(!best) return null;
+    const type = best.plc===routeGroup.plc ? (best.proposedScenarioMiles < routeGroup.currentSourceMiles*0.95 ? 'Reorder Stops Only' : 'Keep Current Route') : 'Reassign PLC Endpoint';
+    if(type==='Keep Current Route') return makeScenario(type, current, [cloneGroup(routeGroup)], {explanation:'Current pickup group remains the best low-disruption grouping under current constraints.', centersMoved:[]});
+    return makeScenario(type, current, [best], {explanation:`${type}: scenario endpoint ${best.plc} lowers modeled route cost/miles. Requires McKesson repricing and contract mileage validation.`, centersMoved:[]});
+  }
+  function proposeRouteSplits(routeGroup){
+    if(!(routeGroup.mixedPLCFlag || routeGroup.weeklyPallets>COLLECTION_TRAILER.planningPalletThreshold || routeGroup.stopCount>10)) return null;
+    const by={}; routeGroup.centers.forEach(c=>{ const key=routeGroup.mixedPLCFlag ? c.currentPLC : nearestPLCForStop(c.raw).plc; if(!by[key]) by[key]=[]; by[key].push(c); });
+    const groups=Object.entries(by).filter(([,cs])=>cs.length).map(([plc,cs],idx)=>calculateRouteGroupKpis({groupId:`${routeGroup.groupId}__split_${idx}`, routeName:`${routeGroup.routeName} Split ${idx+1}`, weekType:routeGroup.weekType, plc, centers:cs}));
+    if(groups.length<2) return null;
+    return makeScenario('Split Route into Smaller Groups', [routeGroup], groups, {explanation:'Split by PLC/geographic cluster to reduce mixed endpoint or large-route validation risk. Requires McKesson repricing and pickup-window validation.', centersMoved:[]});
+  }
+  function proposeCenterMoves(routeGroups){
+    const scenarios=[];
+    for(const source of routeGroups){
+      for(const center of source.centers){
+        for(const cand of findNearbyCompatibleRoutes(center, routeGroups).slice(0,2)){
+          const target=cand.group;
+          const sourceCenters=source.centers.filter(c=>c.id!==center.id);
+          if(!sourceCenters.length) continue;
+          const newSource=cloneGroup(source, sourceCenters);
+          const newTarget=cloneGroup(target, [...target.centers, center]);
+          const current=[source,target]; const proposed=[newSource,newTarget];
+          const score=scoreRegroupingScenario(current, proposed);
+          if(score.weeklyOpportunity>50 || cand.distance<100) scenarios.push(makeScenario('Move Center to Nearby Route', current, proposed, {centersMoved:[center], explanation:`Move ${center.centerName} from ${source.routeName} to nearby compatible route ${target.routeName}. Destination route remains at ${fmt1(newTarget.weeklyPallets)} pallets.`}));
+        }
+      }
+    }
+    return scenarios;
+  }
+  function proposeRouteConsolidations(routeGroups){
+    const scenarios=[];
+    const under=routeGroups.filter(g=>g.weeklyPallets<COLLECTION_TRAILER.underutilizedThreshold);
+    for(let i=0;i<under.length;i++) for(let j=i+1;j<under.length;j++){
+      const a=under[i], b=under[j];
+      if(!scheduleCompatible(a,b)) continue;
+      if(a.weeklyPallets+b.weeklyPallets>COLLECTION_TRAILER.planningPalletThreshold) continue;
+      const ca=groupCentroid(a), cb=groupCentroid(b); if(!ca||!cb) continue;
+      if(haversineMiles(ca.lat,ca.lng,cb.lat,cb.lng)>300) continue;
+      const plc=a.plc===b.plc ? a.plc : mostCommonValue([...a.centers,...b.centers].map(c=>c.currentPLC));
+      const merged=calculateRouteGroupKpis({groupId:`${a.groupId}__${b.groupId}__consolidated`, routeName:`${a.routeName} + ${b.routeName}`, weekType:a.weekType, plc, centers:[...a.centers,...b.centers]});
+      scenarios.push(makeScenario('Consolidate Underutilized Routes', [a,b], [merged], {centersMoved:b.centers, explanation:`Consolidate underutilized compatible routes. Combined volume is ${fmt1(merged.weeklyPallets)} pallets, within 24-pallet max.`}));
+    }
+    return scenarios;
+  }
+  function buildProposedRouteScenarios(routeGroups){
+    const scenarios=[];
+    routeGroups.forEach(g=>{ const plc=proposePLCReassignment(g); if(plc) scenarios.push(plc); const split=proposeRouteSplits(g); if(split) scenarios.push(split); });
+    scenarios.push(...proposeCenterMoves(routeGroups));
+    scenarios.push(...proposeRouteConsolidations(routeGroups));
+    return scenarios;
+  }
+  function rankRegroupingScenarios(scenarios){ return (scenarios||[]).sort((a,b)=>b.totalScore-a.totalScore); }
+  function explainRegroupingScenario(scenario){
+    return scenario?.explanation || `${scenario?.recommendationType || 'Needs Validation'}. Requires McKesson repricing and contract mileage validation before treating as an operational opportunity.`;
+  }
+  function currentRouteNamesForScenario(s){ return uniqueSorted((s.currentGroups||[]).map(g=>g.routeName)).join(', '); }
+  function proposedGroupNamesForScenario(s){ return uniqueSorted((s.proposedGroups||[]).map(g=>`${g.routeName} → ${g.plc}`)).join(' / '); }
+  function centersMovedForScenario(s){ return uniqueSorted((s.centersMoved||[]).map(c=>c.centerName || c.centerNumber)); }
+  function scenarioTotals(groups, field){ return (groups||[]).reduce((a,g)=>a+(Number(g[field])||0),0); }
+  function renderPickupGroupRecommendations(){
+    const panel=$('optimizationPanel'); if(!panel) return;
+    let box=$('aiPickupGroupRecommendations');
+    if(!box){
+      box=document.createElement('div'); box.id='aiPickupGroupRecommendations'; box.className='ai-optimizer-card';
+      const anchor=$('optRoutingStatus')?.parentElement?.parentElement || panel.querySelector('.button-row') || panel;
+      anchor.insertAdjacentElement('afterend', box);
+    }
+    const selected=$('optRouteFilter')?.value || '';
+    const current=buildCurrentRouteGroups();
+    let scenarios=rankRegroupingScenarios(buildProposedRouteScenarios(current));
+    if(selected) scenarios=scenarios.filter(s=>currentRouteNamesForScenario(s).includes(selected) || proposedGroupNamesForScenario(s).includes(selected));
+    scenarios=scenarios.slice(0,15);
+    window.aiPickupGroupScenarios=scenarios;
+    const rows=scenarios.map((s,idx)=>{
+      const currentCost=scenarioTotals(s.currentGroups,'currentWeeklyCost'), proposedCost=scenarioTotals(s.proposedGroups,'proposedWeeklyCost');
+      const cases=scenarioTotals(s.proposedGroups,'weeklyCases'), pallets=scenarioTotals(s.proposedGroups,'weeklyPallets');
+      const currentMiles=scenarioTotals(s.currentGroups,'currentSourceMiles'), proposedMiles=scenarioTotals(s.proposedGroups,'proposedScenarioMiles');
+      const currentPLC=uniqueSorted((s.currentGroups||[]).map(g=>g.plc)).join(', ');
+      const proposedPLC=uniqueSorted((s.proposedGroups||[]).map(g=>g.plc)).join(', ');
+      const trailer=uniqueSorted((s.proposedGroups||[]).map(g=>g.trailerStatus)).join(', ');
+      const moved=centersMovedForScenario(s);
+      return `<tr><td>${idx+1}</td><td>${esc2(s.recommendationType)}</td><td>${esc2(currentRouteNamesForScenario(s))}</td><td>${esc2(proposedGroupNamesForScenario(s))}</td><td>${moved.length?esc2(moved.join('; ')):'—'}</td><td>${esc2(currentPLC)}</td><td>${esc2(proposedPLC)}</td><td>${fmt1(cases)}</td><td>${fmt1(pallets)}</td><td>${money2(currentCost)}</td><td>${money2(proposedCost)}</td><td>${money2(s.weeklyOpportunity)}</td><td>${money2(s.annualOpportunity)}</td><td>${fmtMiles(currentMiles)}</td><td>${fmtMiles(proposedMiles)}</td><td>${esc2(trailer)}</td><td>${esc2(s.confidence)}</td><td>${esc2(s.validationRisk)}</td><td><button class="action" type="button" onclick="window.showPickupGroupScenarioDetails(${idx})">View Details</button></td></tr>`;
+    }).join('');
+    box.innerHTML=`<h2>AI Pickup Group Recommendations</h2><div class="mini-note">Deterministic scenario recommendations. Scenario opportunity only; requires McKesson repricing and contract mileage validation.</div><div class="table-wrap"><table class="review-table"><thead><tr><th>Rank</th><th>Recommendation Type</th><th>Current Route(s)</th><th>Proposed Group</th><th>Centers Moved</th><th>Current PLC</th><th>Proposed PLC</th><th>Weekly Cases</th><th>Weekly Pallets</th><th>Current Weekly Cost</th><th>Proposed Weekly Cost</th><th>Weekly Opportunity</th><th>Annual Opportunity</th><th>Current Source Miles</th><th>Proposed Scenario Miles</th><th>Trailer Status</th><th>Confidence</th><th>Validation Warning</th><th>View Details</th></tr></thead><tbody>${rows || '<tr><td colspan="19">No regrouping scenarios available for current filters.</td></tr>'}</tbody></table></div><div id="aiPickupGroupDetails" class="ai-output"></div>`;
+  }
+  window.showPickupGroupScenarioDetails=function(index){
+    const s=(window.aiPickupGroupScenarios||[])[index]; const box=$('aiPickupGroupDetails'); if(!s||!box) return;
+    const currentCenters=uniqueSorted((s.currentGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerName} (${c.currentRoute})`)));
+    const proposedCenters=uniqueSorted((s.proposedGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerName} → ${g.routeName}`)));
+    const movedIn=centersMovedForScenario(s);
+    const movedOut=movedIn;
+    const currentOrder=(s.currentGroups||[]).map(g=>`${g.routeName}: ${g.centers.map(c=>c.centerName).join(' → ')}`).join('<br>');
+    const proposedOrder=(s.proposedGroups||[]).map(g=>`${g.routeName}: ${g.centers.map(c=>c.centerName).join(' → ')}`).join('<br>');
+    box.innerHTML=`<div class="ai-title">AI Pickup Group Recommendation Details</div><b>Current group centers:</b><br>${esc2(currentCenters.join('; '))}<br><br><b>Proposed group centers:</b><br>${esc2(proposedCenters.join('; '))}<br><br><b>Centers moved in:</b> ${esc2(movedIn.join('; ') || 'None')}<br><b>Centers moved out:</b> ${esc2(movedOut.join('; ') || 'None')}<br><br><b>Current stop order:</b><br>${currentOrder}<br><br><b>Proposed stop order:</b><br>${proposedOrder}<br><br><b>Why recommended:</b> ${esc2(explainRegroupingScenario(s))}<br><br><b>Must validate:</b> Requires McKesson repricing, contract mileage validation, pickup day/time confirmation, driver-hours check, and PLC capacity confirmation. ${esc2(s.validationRisk)}`;
+  };
+  window.buildCenterNodes=buildCenterNodes;
+  window.buildCurrentRouteGroups=buildCurrentRouteGroups;
+  window.calculateRouteGroupKpis=calculateRouteGroupKpis;
+  window.findNearbyCompatibleRoutes=findNearbyCompatibleRoutes;
+  window.proposeCenterMoves=proposeCenterMoves;
+  window.proposeRouteSplits=proposeRouteSplits;
+  window.proposeRouteConsolidations=proposeRouteConsolidations;
+  window.proposePLCReassignment=proposePLCReassignment;
+  window.buildProposedRouteGroups=buildProposedRouteGroups;
+  window.scoreRegroupingScenario=scoreRegroupingScenario;
+  window.rankRegroupingScenarios=rankRegroupingScenarios;
+  window.explainRegroupingScenario=explainRegroupingScenario;
+
+
   function safeDivide(numerator, denominator){
     const n = Number(numerator), d = Number(denominator);
     return Number.isFinite(n) && Number.isFinite(d) && d > 0 ? n / d : null;
@@ -3273,6 +3539,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const selected=$('optRouteFilter')?.value || '';
     const rows=lastOptimizationRows || [];
     updateOptimizationSummary(rows);
+    renderPickupGroupRecommendations();
     if(!selected || !rows.length) return;
     const r=rows[0]; const origin=originForRoute(r.route,r.stops);
     if(origin){
