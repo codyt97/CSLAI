@@ -1,0 +1,42 @@
+[
+  {
+    "fileName": "Plasma Centers Information.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 336 row(s)."
+  },
+  {
+    "fileName": "Schedule plasma centers.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 297 row(s)."
+  },
+  {
+    "fileName": "Billing Center FY26.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 5094 row(s)."
+  },
+  {
+    "fileName": "Plasma Centers cases details.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 31748 row(s)."
+  },
+  {
+    "fileName": "CSL Route Origin.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 15 row(s)."
+  },
+  {
+    "fileName": "Rate Table.xlsx",
+    "status": "source-parsed",
+    "message": "Parsed 40 row(s)."
+  },
+  {
+    "fileName": "Week A Schedule based on Routes.docx",
+    "status": "source-parsed",
+    "message": "Parsed 493 row(s)."
+  },
+  {
+    "fileName": "Week B Schedule Based on Routes.docx",
+    "status": "source-parsed",
+    "message": "Parsed 483 row(s)."
+  }
+]
