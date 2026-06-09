@@ -112,6 +112,7 @@ export async function POST(req) {
         chargeStartsAt: 'first pickup',
         collectionTrailer: '48 ft refrigerated only',
         casesPerPallet: 70,
+        reefer48FootMaxPallets: 24,
         importantFix: 'Current route miles are calculated as route-path miles, not summed stop-level weeklyMiles.'
       }
     });
