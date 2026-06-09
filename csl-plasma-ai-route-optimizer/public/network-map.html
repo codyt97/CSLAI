@@ -132,6 +132,20 @@
     .ai-output .ai-title{font-weight:900;color:#0f172a;margin:0 0 6px}
     textarea.ai-question{width:100%;min-height:68px;border:1px solid #bbf7d0;border-radius:10px;padding:9px;font-family:inherit;font-size:12px;resize:vertical;background:#fff;color:#0f172a}
 
+    .ai-assistant-card{border:1px solid #bfdbfe;background:#eff6ff;color:#172554;border-radius:14px;padding:12px;margin:12px 0;font-size:12px;line-height:1.42}
+    .ai-assistant-card h2{font-size:15px;margin:0 0 4px;font-weight:900;color:#1e3a8a}
+    .ai-chat-history{display:grid;gap:10px;max-height:360px;overflow:auto;background:#fff;border:1px solid #dbeafe;border-radius:12px;padding:10px;margin:10px 0;white-space:normal}
+    .ai-chat-msg{border-radius:12px;padding:10px;line-height:1.45;color:#334155;white-space:pre-wrap}
+    .ai-chat-msg.user{background:#0f172a;color:#fff;margin-left:24px}
+    .ai-chat-msg.assistant{background:#f8fafc;border:1px solid #e2e8f0;margin-right:18px}
+    .ai-chat-msg.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .ai-chat-input{width:100%;min-height:76px;border:1px solid #bfdbfe;border-radius:10px;padding:9px;font-family:inherit;font-size:12px;resize:vertical;background:#fff;color:#0f172a}
+    .ai-chat-starters{display:grid;grid-template-columns:1fr;gap:6px;margin:10px 0}
+    .ai-chat-starters button{font-size:11px;text-align:left;padding:8px 9px}
+    .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+    .data-chip{border:1px solid #bfdbfe;background:#dbeafe;color:#1e3a8a;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+    .warning-chip{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
 
@@ -403,6 +417,26 @@ body.optimization-active aside{padding-bottom:34px;}
       </div>
     </div>
 
+    <div id="aiAssistantPanel" class="view-panel hidden">
+      <div class="ai-assistant-card">
+        <h2>AI Assistant</h2>
+        <div class="sub" style="margin-bottom:8px">Ask questions about routes, invoices, KPIs, optimization, and audit findings.</div>
+        <div class="notice" id="aiChatSetupWarning"><b>Setup:</b> AI-authored answers require the server OpenAI key and model environment variables. If missing, the assistant returns deterministic app-data answers with a setup warning.</div>
+        <div class="ai-chat-starters" id="aiChatStarters"></div>
+        <div class="ai-chat-history" id="aiChatHistory">
+          <div class="ai-chat-msg assistant">Ask a question about CSL Plasma transportation data. I will use compact app context and will not claim validated invoice impact.</div>
+        </div>
+        <textarea id="aiChatInput" class="ai-chat-input" placeholder="Example: Explain PHILLY, What does the invoice audit show?, Why are there zero actionable AI regrouping candidates?"></textarea>
+        <div class="button-row">
+          <button class="action primary" id="aiChatSend" type="button">Send</button>
+          <button class="action" id="aiChatClear" type="button">Clear</button>
+          <button class="action" id="aiChatExplainRoute" type="button">Explain Selected Route</button>
+        </div>
+        <div id="aiChatMeta" class="mini-note">Data used and validation warnings appear after each answer.</div>
+      </div>
+    </div>
+
+
     <div class="legend">
       <h2>PLC Color Legend</h2>
       <div class="legend-item"><span class="dot" style="background:#2563eb"></span> Dallas PLC</div>
@@ -414,7 +448,7 @@ body.optimization-active aside{padding-bottom:34px;}
   <main>
     <div class="topbar">
       <div>
-        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button></div>
+        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button></div>
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
@@ -2057,7 +2091,7 @@ async function loadActualOptimizationRoutes(){
   refreshOptimization();
 }
 
-function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : refreshPlc(); }
+function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : activeView === 'aiAssistant' ? refreshAiAssistant() : refreshPlc(); }
 function onModeChange(){
   const current=$('plcFilter').value;
   populateFilters();
@@ -2070,10 +2104,12 @@ function setView(view){
   $('tabSchedule').classList.toggle('active', view==='schedule');
   if($('tabPlayground')) $('tabPlayground').classList.toggle('active', view==='playground');
   if($('tabOptimization')) $('tabOptimization').classList.toggle('active', view==='optimization');
+  if($('tabAiAssistant')) $('tabAiAssistant').classList.toggle('active', view==='aiAssistant');
   $('plcPanel').classList.toggle('hidden', view!=='plc');
   $('routePanel').classList.toggle('hidden', view!=='schedule');
   if($('playgroundPanel')) $('playgroundPanel').classList.toggle('hidden', view!=='playground');
   if($('optimizationPanel')) $('optimizationPanel').classList.toggle('hidden', view!=='optimization');
+  if($('aiAssistantPanel')) $('aiAssistantPanel').classList.toggle('hidden', view!=='aiAssistant');
   refresh();
 }
 populateFilters();
@@ -2092,6 +2128,7 @@ $('tabPlc').addEventListener('click', ()=>setView('plc'));
 $('tabSchedule').addEventListener('click', ()=>setView('schedule'));
 if($('tabPlayground')) $('tabPlayground').addEventListener('click', ()=>setView('playground'));
 if($('tabOptimization')) $('tabOptimization').addEventListener('click', ()=>setView('optimization'));
+if($('tabAiAssistant')) $('tabAiAssistant').addEventListener('click', ()=>setView('aiAssistant'));
 ['scenarioPricingMethod','scenarioFuelRate','scenarioLinehaulRate','scenarioWeightTier','scenarioIncludeReturn','scenarioTollPreference','scenarioShowLines','scenarioShowCurrentLines','scenarioOpenOnly'].forEach(id => { if($(id)) $(id).addEventListener('change', refreshPlayground); });
 if($('scenarioOpenOnly')) $('scenarioOpenOnly').addEventListener('change', populateScenarioControls);
 if($('scenarioAddUpdate')) $('scenarioAddUpdate').addEventListener('click', addScenarioAssignments);
@@ -3657,6 +3694,83 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
   if(helper) helper.innerHTML=`<b>Confirmed workflow logic:</b> origin → first pickup is deadhead / not charged. Current and proposed costs compare <b>chargeable route miles only</b>: first pickup → remaining stops → destination PLC. Scheduled route pricing uses the Excel Rate Table and FSC without a full-trailer multiplier. Collection routes use 48 ft refrigerated trailers; 70 cases = 1 pallet; 24 pallets is the 48 ft max; case size is 13.63” × 10.5” × 12”. K3 outbound reference: 24” × 20” × 7” baskets, 20 baskets/pallet or 56 cases/pallet. 21.6–24 pallets, over 24 pallets, under 12 pallets, and 11 driver hours are validation checks.`;
 })();
 
+
+
+function refreshAiAssistant(){
+  $('mapTitle').textContent='AI Assistant: grounded CSL Plasma transportation Q&A';
+  $('visiblePill').textContent='AI Assistant';
+}
+
+(function initAiAssistantChat(){
+  const starterQuestions=[
+    'Which routes should we review first?',
+    'Why are PHILLY, ALLENTOWN, and BUFFALO marked Mixed PLC / Relay Validation?',
+    'Why are there zero actionable AI regrouping candidates?',
+    'Which routes are underutilized?',
+    'Which routes are high utilization?',
+    'What does the fuel surcharge audit show?',
+    'Summarize the invoice audit findings.',
+    'What should I present to Bruno?'
+  ];
+  const messages=[];
+  function chatEscape(value){ return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function simpleMarkdown(text){
+    return chatEscape(text)
+      .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+      .replace(/^- (.*)$/gm,'• $1');
+  }
+  function renderChatMeta(dataUsed=[], warnings=[]){
+    const meta=$('aiChatMeta'); if(!meta) return;
+    const data=(dataUsed||[]).map(x=>`<span class="data-chip">${chatEscape(x)}</span>`).join('');
+    const warn=(warnings||[]).slice(0,8).map(x=>`<span class="warning-chip">${chatEscape(x)}</span>`).join('');
+    meta.innerHTML=`${data?`<div><b>Data used</b><div class="chip-row">${data}</div></div>`:''}${warn?`<div><b>Warnings</b><div class="chip-row">${warn}</div></div>`:'<span class="mini-note">No validation warnings returned for the last answer.</span>'}`;
+  }
+  function appendMessage(role, content, extraClass=''){
+    const history=$('aiChatHistory'); if(!history) return;
+    const div=document.createElement('div');
+    div.className=`ai-chat-msg ${role} ${extraClass}`.trim();
+    div.innerHTML=simpleMarkdown(content);
+    history.appendChild(div);
+    history.scrollTop=history.scrollHeight;
+  }
+  function setLoading(isLoading){
+    const btn=$('aiChatSend'); if(btn){ btn.disabled=isLoading; btn.textContent=isLoading?'Thinking…':'Send'; }
+  }
+  function renderStarters(){
+    const box=$('aiChatStarters'); if(!box) return;
+    box.innerHTML=starterQuestions.map(q=>`<button class="action" type="button" data-ai-starter="${chatEscape(q)}">${chatEscape(q)}</button>`).join('');
+    box.querySelectorAll('[data-ai-starter]').forEach(btn=>btn.addEventListener('click',()=>{ const input=$('aiChatInput'); if(input){ input.value=btn.dataset.aiStarter; sendAiChat(); } }));
+  }
+  async function sendAiChat(){
+    const input=$('aiChatInput'); if(!input) return;
+    const text=String(input.value||'').trim(); if(!text) return;
+    input.value='';
+    appendMessage('user', text);
+    messages.push({role:'user', content:text});
+    setLoading(true);
+    try{
+      const selectedRoute=$('optRouteFilter')?.value || $('scheduleRouteFilter')?.value || '';
+      const res=await fetch('/api/ai-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages, routeName:selectedRoute, mode:activeView})});
+      const json=await res.json();
+      if(!res.ok && !(json && json.answer)) throw new Error(json?.warnings?.join('; ') || json?.error || 'AI Assistant request failed');
+      appendMessage('assistant', json.answer || 'No answer returned.');
+      messages.push({role:'assistant', content:json.answer || ''});
+      renderChatMeta(json.dataUsed || [], json.warnings || []);
+      if(res.status===503){ const warn=$('aiChatSetupWarning'); if(warn) warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; }
+    }catch(err){
+      appendMessage('assistant', `Error: ${err.message}`, 'error');
+      renderChatMeta([], [err.message]);
+    }finally{
+      setLoading(false);
+    }
+  }
+  window.sendAiChat=sendAiChat;
+  renderStarters();
+  const send=$('aiChatSend'); if(send) send.addEventListener('click', sendAiChat);
+  const clear=$('aiChatClear'); if(clear) clear.addEventListener('click', ()=>{ messages.length=0; const h=$('aiChatHistory'); if(h) h.innerHTML='<div class="ai-chat-msg assistant">Chat cleared. Ask a route, invoice, KPI, optimization, or audit question.</div>'; renderChatMeta([], []); });
+  const explain=$('aiChatExplainRoute'); if(explain) explain.addEventListener('click', ()=>{ const route=$('optRouteFilter')?.value || $('scheduleRouteFilter')?.value || 'PHILLY'; const input=$('aiChatInput'); if(input){ input.value=`Explain ${route}`; sendAiChat(); } });
+  const input=$('aiChatInput'); if(input) input.addEventListener('keydown', (event)=>{ if((event.metaKey||event.ctrlKey) && event.key==='Enter') sendAiChat(); });
+})();
 
 refresh();
 
