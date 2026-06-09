@@ -284,7 +284,7 @@ export function getInvoiceAudit() {
     zeroLinehaulRows: results.filter((row) => !row.linehaul).length,
     zeroFuelRows: results.filter((row) => !row.fuelSurcharge).length,
     abnormalCostPerMileRows: results.filter((row) => row.costPerMile && (row.costPerMile < 1 || row.costPerMile > 20)).length,
-    operationalOpportunityNotice: 'Route-mile and cost scenarios are operational opportunity only unless actual invoice and contract rating proves savings.',
+    operationalOpportunityNotice: 'Route-mile and cost scenarios are operational opportunity only unless actual invoice and contract rating validates invoice impact.',
     rows: results
   };
 }
