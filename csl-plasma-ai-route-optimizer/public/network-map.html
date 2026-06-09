@@ -267,11 +267,7 @@ body.optimization-active aside{padding-bottom:34px;}
           <div><label for="routingMode">Routing Mode</label><select id="routingMode"><option value="straight">Straight / air lines</option><option value="road">Actual road routes</option></select></div>
           <div><label for="tollPreference">Toll Preference</label><select id="tollPreference"><option value="allow">Allow toll roads</option><option value="avoid">Avoid toll roads</option></select></div>
         </div>
-        <div>
-          <label for="geoapifyApiKey">Geoapify Routing API Key (embedded)</label>
-          <input id="geoapifyApiKey" type="password" placeholder="API key is embedded; paste another key only if you want to override" autocomplete="off" />
-        </div>
-        <div id="routingStatus" class="route-status">Road routes are not loaded yet. The Geoapify key is embedded. Select a route/week/day, choose toll preference, then click <b>Load Road Routes</b>.</div>
+        <div id="routingStatus" class="route-status">Road routes are not loaded yet. Road routing uses the backend Geoapify proxy. Select a route/week/day, choose toll preference, then click <b>Load Road Routes</b>.</div>
         <div>
           <label for="speedRange">Truck speed</label>
           <div class="range-wrap"><input type="range" id="speedRange" min="1" max="10" value="5" /><span id="speedValue">5x</span></div>
@@ -451,7 +447,7 @@ const fmtMiles = miles => Number.isFinite(Number(miles)) && Number(miles) > 0 ? 
 const fmtTime = seconds => { const s=Number(seconds)||0; if(!s) return '—'; const h=Math.floor(s/3600), m=Math.round((s%3600)/60); return h ? `${h}h ${m}m` : `${m}m`; };
 const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
 const dayLabels = {monday:'Monday',tuesday:'Tuesday',wednesday:'Wednesday',thursday:'Thursday',friday:'Friday',saturday:'Saturday',sunday:'Sunday'};
-const DEFAULT_GEOAPIFY_API_KEY = '7706b563f8d14851ae0ad7c76c821c88';
+const DEFAULT_GEOAPIFY_API_KEY = '';
 const ROUTING_MAX_WAYPOINTS_PER_CALL = 20;
 // Use drive mode first because the Geoapify playground confirmed this format works.
 // The route endpoint logic still follows the truck/PLC business rules from the data.
@@ -460,14 +456,9 @@ const ROAD_ROUTE_CACHE = new Map();
 const SCENARIO_ACTUAL_ROUTE_CACHE = new Map();
 const OPTIMIZATION_ACTUAL_ROUTE_CACHE = new Map();
 function getGeoapifyApiKey(){
-  const input = document.getElementById('geoapifyApiKey');
-  const saved = localStorage.getItem('geoapify_api_key') || '';
-  return String((input && input.value) || DEFAULT_GEOAPIFY_API_KEY || saved || '').trim();
+  return '';
 }
 function saveGeoapifyApiKey(){
-  const key = getGeoapifyApiKey();
-  if(key) localStorage.setItem('geoapify_api_key', key);
-  else localStorage.removeItem('geoapify_api_key');
   ROAD_ROUTE_CACHE.clear();
 }
 let activeView = 'plc';
@@ -870,8 +861,7 @@ function activePathFor(tr){
   return tr && tr.roadPath && tr.roadPath.length > 1 && $('routingMode').value === 'road' ? tr.roadPath : (tr.path || []);
 }
 function routeCacheKey(tr, avoidTolls){
-  const keyTail = (getGeoapifyApiKey() || '').slice(-6);
-  return `${GEOAPIFY_TRAVEL_MODE}|${keyTail}|${tr.route}|${avoidTolls?'avoid':'allow'}|${(tr.path||[]).map(p=>p.join(',')).join('|')}`;
+  return `${GEOAPIFY_TRAVEL_MODE}|backend|${tr.route}|${avoidTolls?'avoid':'allow'}|${(tr.path||[]).map(p=>p.join(',')).join('|')}`;
 }
 function routeGeometryToLatLngs(geometry){
   if(!geometry) return [];
@@ -891,8 +881,6 @@ function chunkRoutePoints(points, maxPoints){
   return chunks;
 }
 async function fetchGeoapifyRoadRoute(tr, avoidTolls){
-  const apiKey = getGeoapifyApiKey();
-  if(!apiKey) throw new Error('Geoapify Routing API key is missing.');
   const cached = ROAD_ROUTE_CACHE.get(routeCacheKey(tr, avoidTolls));
   if(cached) return cached;
   const basePath = tr.path || [];
@@ -900,26 +888,23 @@ async function fetchGeoapifyRoadRoute(tr, avoidTolls){
   const chunks = chunkRoutePoints(basePath, ROUTING_MAX_WAYPOINTS_PER_CALL);
   let roadPath = [], routedMeters = 0, driveSeconds = 0;
   for(const chunk of chunks){
-    const url = new URL('https://api.geoapify.com/v1/routing');
-    url.searchParams.set('mode', GEOAPIFY_TRAVEL_MODE);
-    url.searchParams.set('waypoints', chunk.map(p=>`${p[0]},${p[1]}`).join('|'));
-    url.searchParams.set('intermediate_waypoint_mode','stopover');
-    url.searchParams.set('format','geojson');
-    url.searchParams.set('apiKey', apiKey);
-    if(avoidTolls) url.searchParams.set('avoid','tolls');
-    const response = await fetch(url.toString());
-    if(!response.ok){
-      const errorText = await response.text().catch(()=> '');
-      if(response.status === 401){
-        throw new Error('Geoapify 401 Unauthorized: API key is invalid or restricted. Paste the key exactly from Geoapify, or remove/recheck key restrictions.');
+    const response = await fetch('/api/geoapify-route', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mode: GEOAPIFY_TRAVEL_MODE,
+        avoidTolls,
+        waypoints: chunk.map(p=>({lat:p[0], lng:p[1]}))
+      })
+    });
+    const data = await response.json().catch(()=> ({}));
+    if(!response.ok || data.error){
+      if(data.error === 'GEOAPIFY_API_KEY is not configured'){
+        throw new Error('Road routing unavailable. GEOAPIFY_API_KEY is not configured.');
       }
-      throw new Error(`Geoapify ${response.status}${errorText ? ': ' + errorText.slice(0,180) : ''}`);
+      throw new Error(data.error || `Road routing failed ${response.status}`);
     }
-    const data = await response.json();
-    if(data.error || data.statusCode){
-      throw new Error(`${data.error || 'Geoapify error'} ${data.statusCode || ''} ${data.message || ''}`.trim());
-    }
-    const feature = data.features && data.features[0];
+    const feature = data.raw?.features && data.raw.features[0];
     if(!feature) throw new Error('No road route returned');
     const partPath = routeGeometryToLatLngs(feature.geometry);
     if(partPath.length){
@@ -990,7 +975,6 @@ function redrawRouteLinesOnly(){
 async function loadRoadRoutes(){
   if(activeView !== 'schedule') setView('schedule');
   saveGeoapifyApiKey();
-  if(!getGeoapifyApiKey()){ $('routingStatus').innerHTML = 'Geoapify Routing API key is missing.'; return; }
   if(!truckRoutes.length){ $('routingStatus').innerHTML = 'No scheduled truck routes are visible. Select a route/week/day first.'; return; }
   $('routingMode').value = 'road';
   const avoidTolls = $('tollPreference').value === 'avoid';
@@ -999,7 +983,7 @@ async function loadRoadRoutes(){
     $('routingStatus').innerHTML = `Too many road-route API calls for this view (${totalCalls}). Narrow the filters by Route Name, Week, or Pickup Day, then try again.`;
     return;
   }
-  $('routingStatus').innerHTML = `Loading actual road routes for ${truckRoutes.length} truck route(s) using Geoapify mode=${GEOAPIFY_TRAVEL_MODE}... Tolls: ${avoidTolls ? 'Avoid toll roads' : 'Allow toll roads'}.`;
+  $('routingStatus').innerHTML = `Loading actual road routes for ${truckRoutes.length} truck route(s) using the backend Geoapify proxy mode=${GEOAPIFY_TRAVEL_MODE}... Tolls: ${avoidTolls ? 'Avoid toll roads' : 'Allow toll roads'}.`;
   let ok=0, failed=0, lastError='';
   for(const tr of truckRoutes){
     try{
@@ -2125,10 +2109,6 @@ if($('optApplyScenario')) $('optApplyScenario').addEventListener('click', sendOp
 if($('scenarioLoadActualRoutes')) $('scenarioLoadActualRoutes').addEventListener('click', loadActualScenarioRoutes);
 if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', loadActualOptimizationRoutes);
 
-if($('geoapifyApiKey')){
-  $('geoapifyApiKey').value = DEFAULT_GEOAPIFY_API_KEY || localStorage.getItem('geoapify_api_key') || '';
-  $('geoapifyApiKey').addEventListener('input', saveGeoapifyApiKey);
-}
 
 // ===== Cody UX update: load all routes, 48/53 trailer calculation, and stop-by-stop workflow table =====
 (function applyCodyOptimizationWorkflowUpdate(){
