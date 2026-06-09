@@ -52,6 +52,25 @@ function SourceStatusBadge({ status }) {
   return <span style={{ ...styles.badge, ...(SOURCE_STATUS_STYLES[status] || {}) }}>{status || 'missing'}</span>;
 }
 
+function csvValue(value) {
+  if (value === null || value === undefined) return '""';
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+function downloadCsv(fileName, headers, rows) {
+  if (!rows.length) {
+    alert('No rows are available to export.');
+    return;
+  }
+  const csv = [headers, ...rows].map((row) => row.map(csvValue).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function rowStatus(row) {
   if (row.status && row.status !== 'OK') return row.status;
   if ([row.invoiceDisputeDeadlineStatus, row.overchargeUnderchargeDeadlineStatus].includes('Expired Window')) return 'Expired Window';
@@ -154,6 +173,18 @@ export default function AuditPage() {
       .slice(0, 50);
   }, [fuelAudit, fuelSearch, fuelStatusFilter]);
 
+  function exportInvoiceRows() {
+    downloadCsv('invoice-review-rows.csv', ['Status', 'Route', 'Center', 'Center Number', 'PLC', 'Cases', 'Miles', 'Linehaul', 'Fuel Surcharge', 'Total Cost', 'Cost Per Case', 'Cost Per Mile', 'Explanation'], invoiceRowsNeedingReview.map((row) => [rowStatus(row), row.routeName, row.centerName, row.centerNumber, row.plc, row.cases, row.miles, row.linehaul, row.fuelSurcharge, row.totalCost, row.costPerCase, row.costPerMile, row.explanation]));
+  }
+
+  function exportFuelRows() {
+    downloadCsv('fuel-surcharge-review-rows.csv', ['Status', 'Route', 'Center', 'Center Number', 'PLC', 'Linehaul', 'Fuel Surcharge', 'Actual Fuel Percent', 'Expected Fuel Percent', 'Variance Percent', 'Explanation'], fuelRowsNeedingReview.map((row) => [fuelRowStatus(row), row.routeName, row.centerName, row.centerNumber, row.plc, row.linehaul, row.fuelSurcharge, row.actualFuelSurchargePercent, row.expectedFuelSurchargePercent, row.variancePercent, row.explanation]));
+  }
+
+  function exportDataQualityWarnings() {
+    downloadCsv('data-quality-warnings.csv', ['Warning', 'Source Status', 'Generated At'], warnings.map((warning) => [warning.warning || JSON.stringify(warning), dataSummary?.dataQuality?.sourceStatus, dataSummary?.generatedAt]));
+  }
+
   return (
     <html>
       <body style={styles.body}>
@@ -172,6 +203,14 @@ export default function AuditPage() {
 
           {error && <p style={styles.error}>{error}</p>}
           {!dataSummary || !invoiceAudit || !fuelAudit ? <p style={styles.loading}>Loading audit APIs…</p> : null}
+
+          {dataSummary && invoiceAudit && fuelAudit && (
+            <div style={styles.exportBar}>
+              <button style={styles.exportButton} onClick={exportInvoiceRows} disabled={!invoiceRowsNeedingReview.length}>Export Invoice Review Rows CSV</button>
+              <button style={styles.exportButton} onClick={exportFuelRows} disabled={!fuelRowsNeedingReview.length}>Export Fuel Surcharge Review Rows CSV</button>
+              <button style={styles.exportButton} onClick={exportDataQualityWarnings} disabled={!warnings.length}>Export Data Quality Warnings CSV</button>
+            </div>
+          )}
 
           {dataSummary && invoiceAudit && fuelAudit && (
             <Card title="Executive Summary">
@@ -420,6 +459,8 @@ const styles = {
   loading: { padding: 16 },
   note: { color: '#40566f', lineHeight: 1.5, marginTop: 0 },
   filters: { display: 'flex', flexWrap: 'wrap', gap: 12, margin: '16px 0' },
+  exportBar: { display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 },
+  exportButton: { background: '#0b63ce', border: 0, borderRadius: 8, color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 700, padding: '10px 12px' },
   filterLabel: { display: 'flex', flexDirection: 'column', gap: 6, color: '#5d7086', fontSize: 13, fontWeight: 700 },
   input: { border: '1px solid #cbd8e6', borderRadius: 8, fontSize: 14, padding: '9px 10px', minWidth: 220 },
   card: { background: 'white', border: '1px solid #dce6f1', borderRadius: 16, padding: 22, marginTop: 20, boxShadow: '0 8px 22px rgba(16, 32, 51, 0.06)' },
