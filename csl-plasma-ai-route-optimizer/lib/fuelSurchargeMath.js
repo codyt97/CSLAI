@@ -68,7 +68,7 @@ export function getFuelSurchargeAudit({ dieselAverage } = {}) {
     status,
     explanation: expectedPercent === null
       ? 'Needs Diesel Average: provide dieselAverage to apply 1% per full $0.08 above $1.70/gallon.'
-      : 'Expected fuel surcharge uses 1% per full $0.08 diesel increase above $1.70/gallon; this is an audit signal and requires contract rating or McKesson repricing confirmation.',
+      : 'Expected fuel surcharge uses 1% per full $0.08 diesel increase above $1.70/gallon; this is an audit signal, not confirmed savings.',
     zeroFuelWithLinehaulRows,
     abnormalFuelPercentRows,
     rows
