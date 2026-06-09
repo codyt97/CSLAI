@@ -25,6 +25,17 @@ const SOURCE_STATUS_STYLES = {
   missing: { background: '#ffecec', color: '#a00000' }
 };
 
+const CONTRACT_RULES = [
+  ['Invoice baseline', 'Uses available billing/runtime data as the invoice baseline.', 'Fallback-derived values should be replaced with source-parsed billing JSON when available.'],
+  ['Route-mile reductions', 'Shown as operational opportunity only, not confirmed invoice savings.', 'Savings require contract rating or McKesson repricing confirmation.'],
+  ['Geoapify road miles', 'Used for visualization and scenario modeling only.', 'Validate contract billing mileage against PC Miler/e-Miler or invoice mileage where available.'],
+  ['Deadhead / truck-origin miles', 'Shown for operational visibility only.', 'Treat as non-billable unless a source confirms they are billable.'],
+  ['Fuel surcharge', '1% for each full $0.08 diesel increase above $1.70/gallon.', 'Rows need diesel average and linehaul/fuel values to calculate variance.'],
+  ['Audit deadlines', 'Dispute deadline is invoice date + 30 days; overcharge/undercharge deadline is pickup/delivery date + 180 days.', 'Missing dates are flagged as Missing Data rather than estimated.'],
+  ['Pickup assumptions', '70 cases = 1 pallet; collection routes assume a 48-foot refrigerated trailer.', 'Confirm equipment and pallet assumptions against operating requirements.'],
+  ['Missing fields', 'Flags Missing Data when required fields are unavailable.', 'The dashboard does not invent missing invoice, schedule, route, or contract fields.']
+];
+
 function money(value) {
   return typeof value === 'number' ? value.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : '—';
 }
@@ -184,6 +195,26 @@ export default function AuditPage() {
               </div>
             </Card>
           )}
+
+          <Card title="Contract Logic & Billing Assumptions">
+            <p style={styles.note}>This section documents the assumptions used by the audit dashboard. It is not a replacement for the signed agreement or McKesson confirmation.</p>
+            <div style={styles.tableWrap}>
+              <table style={styles.contractTable}>
+                <thead>
+                  <tr><th style={styles.th}>Rule</th><th style={styles.th}>How the dashboard treats it</th><th style={styles.th}>Current data limitation / warning</th></tr>
+                </thead>
+                <tbody>
+                  {CONTRACT_RULES.map(([rule, treatment, warning]) => (
+                    <tr key={rule}>
+                      <td style={styles.td}>{rule}</td>
+                      <td style={styles.td}>{treatment}</td>
+                      <td style={styles.td}>{warning}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
           {dataSummary && (
             <Card title="Data Source Summary">
@@ -378,6 +409,7 @@ const styles = {
   value: { color: '#102033', fontSize: 22, fontWeight: 800 },
   tableWrap: { overflowX: 'auto', marginTop: 18 },
   table: { borderCollapse: 'collapse', minWidth: 640, width: '100%' },
+  contractTable: { borderCollapse: 'collapse', minWidth: 900, width: '100%' },
   badge: { borderRadius: 999, display: 'inline-block', fontSize: 12, fontWeight: 800, padding: '4px 9px', whiteSpace: 'nowrap' },
   reviewTable: { borderCollapse: 'collapse', minWidth: 1500, width: '100%' },
   fuelReviewTable: { borderCollapse: 'collapse', minWidth: 1300, width: '100%' },
