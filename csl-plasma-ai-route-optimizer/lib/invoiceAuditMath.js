@@ -10,7 +10,23 @@ const ALLOWED_STATUS = {
   EXPIRED: 'Expired Window',
   UNMAPPED: 'Unmapped'
 };
-const MONEY_FIELDS = ['totalRouteCost', 'sumBilledWeekly', 'linehaulCost', 'fuelSurchargeDollar', 'storageFeeDollar', 'otherChargesDollar'];
+const MONEY_FIELDS = ['totalRouteCost', 'sumBilledWeekly', 'linehaulCost', 'linehaulAmount', 'Linehaul Amount', 'fuelSurchargeDollar', 'fuelSurcharge', 'Fuel Surcharge', 'storageFeeDollar', 'otherChargesDollar', 'bOLTotal', 'bolTotal', 'BOL Total'];
+const BILLING_FIELDS = {
+  routeName: ['Route Name Mckensson', 'routeNameMckensson', 'routeNameMckesson', 'routeName', 'Route Name'],
+  centerName: ['Stop Location', 'stopLocation', 'centerName'],
+  plc: ['PLC', 'pLC', 'plc', 'Destination PLC', 'destinationPLC'],
+  cases: ['Cases', 'cases'],
+  miles: ['Miles', 'miles', 'Rate Miles', 'rateMiles'],
+  linehaul: ['Linehaul Amount', 'linehaulAmount', 'linehaul'],
+  fuelSurcharge: ['Fuel Surcharge', 'fuelSurcharge'],
+  totalCost: ['BOL Total', 'bOLTotal', 'bolTotal', 'totalCost'],
+  costPerCase: ['Cost per Case', 'costPerCase'],
+  costPerMile: ['Cost per Mile', 'costPerMile'],
+  invoiceDate: ['Invoice Date', 'invoiceDate'],
+  pickupDate: ['Pickup Date', 'pickupDate'],
+  bol: ['BOL', 'bOL', 'bol'],
+  invoiceNo: ['Invoice No', 'invoiceNo']
+};
 
 function readJson(fileName) {
   if (!['billingFY26.json', 'records.json'].includes(fileName)) return null;
@@ -39,14 +55,48 @@ function numberValue(row, fields) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function hasTextValue(row, fields) {
+  return firstValue(row, fields) !== undefined;
+}
+
+function hasNumberValue(row, fields) {
+  return numberValue(row, fields) !== 0;
+}
+
+function isValidBillingRow(row) {
+  return hasTextValue(row, BILLING_FIELDS.bol)
+    || hasTextValue(row, BILLING_FIELDS.routeName)
+    || hasTextValue(row, BILLING_FIELDS.centerName)
+    || hasNumberValue(row, BILLING_FIELDS.cases)
+    || hasNumberValue(row, BILLING_FIELDS.miles)
+    || hasNumberValue(row, BILLING_FIELDS.linehaul)
+    || hasNumberValue(row, BILLING_FIELDS.fuelSurcharge)
+    || hasNumberValue(row, BILLING_FIELDS.totalCost);
+}
+
 function hasAnyMoney(row) {
   return MONEY_FIELDS.some((field) => Number.isFinite(Number(row[field])) && Number(row[field]) !== 0);
 }
 
-function addDays(value, days) {
-  if (!value) return { date: null, status: ALLOWED_STATUS.MISSING };
+function normalizeDate(value) {
+  if (!value) return null;
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 30000) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    return new Date(excelEpoch + numericValue * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { date: null, status: ALLOWED_STATUS.MISSING };
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(value, days) {
+  const isoDate = normalizeDate(value);
+  if (!isoDate) return { date: null, status: ALLOWED_STATUS.MISSING };
+
+  const date = new Date(isoDate);
   date.setUTCDate(date.getUTCDate() + days);
   const iso = date.toISOString().slice(0, 10);
   return { date: iso, status: date < new Date() ? ALLOWED_STATUS.EXPIRED : ALLOWED_STATUS.OK };
@@ -69,26 +119,30 @@ function billingRows(summary) {
   const billingSummary = summary.files.find((file) => file.fileName === 'billingFY26.json');
   let rows = [];
 
-  if (billingSummary?.sourceStatus === 'source-parsed-json') rows = rowsFromPayload(readJson('billingFY26.json'));
-  if (billingSummary?.sourceStatus === 'fallback-records-json') rows = rowsFromPayload(readJson('records.json')).filter(hasAnyMoney);
+  if (billingSummary?.sourceStatus === 'source-parsed-json') rows = rowsFromPayload(readJson('billingFY26.json')).filter(isValidBillingRow);
+  if (billingSummary?.sourceStatus === 'fallback-records-json') rows = rowsFromPayload(readJson('records.json')).filter((row) => hasAnyMoney(row) || isValidBillingRow(row));
 
   return { billingSummary, rows };
 }
 
 function auditRow(row, centerNames) {
-  const routeName = firstValue(row, ['routeNameMckesson', 'routeName', 'route', 'mckessonRoute']);
+  const routeName = firstValue(row, [...BILLING_FIELDS.routeName, 'route', 'mckessonRoute']);
   const centerNumber = firstValue(row, ['centerNumber', 'centerId', 'id']);
-  const centerName = firstValue(row, ['centerName', 'name']) || centerNames.get(String(centerNumber || '').trim()) || centerNames.get(String(Number(centerNumber)));
-  const plc = firstValue(row, ['actualPLC', 'basePLC', 'plc', 'originPLC']);
-  const cases = numberValue(row, ['weeklyCases', 'cases', 'caseCount']);
-  const miles = numberValue(row, ['weeklyMiles', 'miles', 'routeMiles']);
-  const linehaul = numberValue(row, ['linehaulCost', 'linehaul']);
-  const fuelSurcharge = numberValue(row, ['fuelSurchargeDollar', 'fuelSurcharge', 'fuel']);
-  const totalCost = numberValue(row, ['totalRouteCost', 'sumBilledWeekly', 'totalCost', 'invoiceTotal']) || linehaul + fuelSurcharge;
-  const costPerCase = cases > 0 ? totalCost / cases : 0;
-  const costPerMile = miles > 0 ? totalCost / miles : 0;
-  const invoiceDate = firstValue(row, ['invoiceDate', 'invoice_date']);
-  const pickupDate = firstValue(row, ['pickupDate', 'pickup_date', 'serviceDate']);
+  const centerName = firstValue(row, BILLING_FIELDS.centerName) || firstValue(row, ['name']) || centerNames.get(String(centerNumber || '').trim()) || centerNames.get(String(Number(centerNumber)));
+  const plc = firstValue(row, [...BILLING_FIELDS.plc, 'actualPLC', 'basePLC', 'originPLC']);
+  const cases = numberValue(row, ['weeklyCases', ...BILLING_FIELDS.cases, 'caseCount']);
+  const miles = numberValue(row, ['weeklyMiles', ...BILLING_FIELDS.miles, 'routeMiles']);
+  const linehaul = numberValue(row, ['linehaulCost', ...BILLING_FIELDS.linehaul]);
+  const fuelSurcharge = numberValue(row, ['fuelSurchargeDollar', ...BILLING_FIELDS.fuelSurcharge, 'fuel']);
+  const totalCost = numberValue(row, ['totalRouteCost', 'sumBilledWeekly', ...BILLING_FIELDS.totalCost]) || linehaul + fuelSurcharge;
+  const sourceCostPerCase = numberValue(row, BILLING_FIELDS.costPerCase);
+  const sourceCostPerMile = numberValue(row, BILLING_FIELDS.costPerMile);
+  const costPerCase = sourceCostPerCase || (cases > 0 ? totalCost / cases : 0);
+  const costPerMile = sourceCostPerMile || (miles > 0 ? totalCost / miles : 0);
+  const invoiceDate = normalizeDate(firstValue(row, BILLING_FIELDS.invoiceDate));
+  const pickupDate = normalizeDate(firstValue(row, BILLING_FIELDS.pickupDate));
+  const bol = firstValue(row, BILLING_FIELDS.bol);
+  const invoiceNo = firstValue(row, BILLING_FIELDS.invoiceNo);
   const disputeDeadline = addDays(invoiceDate, 30);
   const overchargeDeadline = addDays(pickupDate, 180);
 
@@ -121,6 +175,8 @@ function auditRow(row, centerNames) {
     routeName,
     centerName,
     centerNumber,
+    bol,
+    invoiceNo,
     plc,
     cases,
     miles,
@@ -129,6 +185,8 @@ function auditRow(row, centerNames) {
     totalCost,
     costPerCase: cases > 0 ? Number(costPerCase.toFixed(2)) : null,
     costPerMile: miles > 0 ? Number(costPerMile.toFixed(2)) : null,
+    invoiceDate,
+    pickupDate,
     invoiceDisputeDeadline: disputeDeadline.date,
     invoiceDisputeDeadlineStatus: disputeDeadline.status,
     overchargeUnderchargeDeadline: overchargeDeadline.date,
@@ -152,6 +210,14 @@ export function getInvoiceAudit() {
   const totalCost = sum(results, 'totalCost');
   const totalCases = sum(results, 'cases');
   const totalMiles = sum(results, 'miles');
+  const costMappingAppearsInvalid = totalLinehaul === 0 && totalFuelSurcharge > 0;
+  const invoiceLevelTotalsAppearSummed = totalCost > 100000000 && totalLinehaul > 0 && totalCost > (totalLinehaul + totalFuelSurcharge) * 10;
+  const status = costMappingAppearsInvalid || invoiceLevelTotalsAppearSummed ? ALLOWED_STATUS.REVIEW : ALLOWED_STATUS.OK;
+  const explanation = costMappingAppearsInvalid
+    ? 'Linehaul mapping appears invalid.'
+    : invoiceLevelTotalsAppearSummed
+      ? 'Total cost mapping appears invalid because invoice-level totals may be summed per row.'
+      : 'Invoice audit totals use valid billing rows and BOL Total as row-level total cost.';
 
   return {
     generatedAt: new Date().toISOString(),
@@ -164,8 +230,10 @@ export function getInvoiceAudit() {
     totalLinehaul,
     totalFuelSurcharge,
     totalCost,
-    averageCostPerCase: totalCases > 0 ? Number((totalCost / totalCases).toFixed(2)) : null,
-    averageCostPerMile: totalMiles > 0 ? Number((totalCost / totalMiles).toFixed(2)) : null,
+    averageCostPerCase: !invoiceLevelTotalsAppearSummed && totalCases > 0 ? Number((totalCost / totalCases).toFixed(2)) : null,
+    averageCostPerMile: !invoiceLevelTotalsAppearSummed && totalMiles > 0 ? Number((totalCost / totalMiles).toFixed(2)) : null,
+    status,
+    explanation,
     rowsNeedingReview: results.filter((row) => row.status !== ALLOWED_STATUS.OK).length,
     unmappedRows: results.filter((row) => row.status === ALLOWED_STATUS.UNMAPPED).length,
     missingPlcRows: results.filter((row) => !row.plc).length,
