@@ -173,6 +173,26 @@ export default function AuditPage() {
           {error && <p style={styles.error}>{error}</p>}
           {!dataSummary || !invoiceAudit || !fuelAudit ? <p style={styles.loading}>Loading audit APIs…</p> : null}
 
+          {dataSummary && invoiceAudit && fuelAudit && (
+            <Card title="Executive Summary">
+              <p style={styles.note}>This audit view highlights billing and fuel-surcharge signals from the available runtime data. Items marked for review are audit flags, not confirmed billing errors. Route optimization results should be treated as operational opportunities unless confirmed through contract rating or McKesson repricing.</p>
+              <div style={styles.grid}>
+                <Metric label="Total centers" value={number(filesByName['centers.json']?.recordCount)} />
+                <Metric label="Scheduled centers" value={number(filesByName['scheduledCenters.json']?.recordCount)} />
+                <Metric label="Billing rows audited" value={number(invoiceAudit.totalRows)} />
+                <Metric label="Total linehaul" value={money(invoiceAudit.totalLinehaul)} />
+                <Metric label="Total fuel surcharge" value={money(invoiceAudit.totalFuelSurcharge)} />
+                <Metric label="Total cost" value={money(invoiceAudit.totalCost)} />
+                <Metric label="Average cost per case" value={money(invoiceAudit.averageCostPerCase)} />
+                <Metric label="Average cost per mile" value={money(invoiceAudit.averageCostPerMile)} />
+                <Metric label="Rows needing invoice review" value={number(invoiceAudit.rowsNeedingReview)} />
+                <Metric label="Abnormal cost-per-mile rows" value={number(invoiceAudit.abnormalCostPerMileRows)} />
+                <Metric label="Fuel surcharge status" value={fuelAudit.status || '—'} />
+                <Metric label="Fuel variance" value={percent(fuelAudit.variancePercent)} />
+              </div>
+            </Card>
+          )}
+
           {dataSummary && (
             <Card title="Data Quality & Source Status">
               <p style={styles.sourceWarning}>Some audit values may be fallback-derived from records.json when newer generated JSON files are unavailable. Use this dashboard for operational review until source-parsed billing and schedule JSON are loaded.</p>
