@@ -2576,14 +2576,14 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       <div class="opt-decision-card"><h3>Current route</h3><div class="opt-big-number">${esc(r.route)}</div><div class="opt-card-grid-sm">
         <div class="opt-mini-metric">Endpoint PLC(s)<b>${esc(r.currentPLCText)}</b></div>
         <div class="opt-mini-metric">Stops<b>${fmt0(r.stopCount)}</b></div>
-        <div class="opt-mini-metric">Workbook miles<b>${fmtMiles(r.currentMiles)}</b></div>
+        <div class="opt-mini-metric">Current source miles<b>${fmtMiles(r.currentMiles)}</b></div>
         <div class="opt-mini-metric">Weekly cost<b>${money2(r.currentTotal)}</b></div>
         <div class="opt-mini-metric">Cases / Pallets<b>${fmt1(r.cases)} / ${fmt1(r.pallets)}</b></div>
         <div class="opt-mini-metric">Trailer load<b>${trailerLoadText(r.pallets)}</b></div>
       </div></div>
       <div class="opt-decision-card"><h3>Proposed workflow</h3><div class="opt-big-number">${esc(r.newRouteText)}</div><div class="opt-card-grid-sm">
         <div class="opt-mini-metric">Design<b>${esc(r.recommendationType)}</b></div>
-        <div class="opt-mini-metric">Proposed miles<b>${fmtMiles(r.newMiles)}</b></div>
+        <div class="opt-mini-metric">Proposed scenario miles<b>${fmtMiles(r.newMiles)}</b></div>
         <div class="opt-mini-metric">New weekly cost<b>${money2(r.newTotal)}</b></div>
         <div class="opt-mini-metric">Annual opportunity<b>${money2(Math.max(0,r.annualSavings))}</b></div>
         <div class="opt-mini-metric">Fuel change<b>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</b></div>
@@ -2918,6 +2918,33 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(p < COLLECTION_TRAILER.underutilizedThreshold) return 'Underutilized';
     return 'OK';
   }
+  function stopIdSet(stops){ return new Set((stops||[]).map(s=>String(s.id ?? s.centerNumber ?? s.routeName ?? '')).filter(Boolean)); }
+  function usesSameStopSet(route){
+    const current = stopIdSet(route?.stops || []);
+    const proposed = stopIdSet((route?.segments || []).flatMap(seg=>seg.stops || []));
+    if(!current.size || current.size !== proposed.size) return false;
+    for(const id of current) if(!proposed.has(id)) return false;
+    return true;
+  }
+  function mileageBasisForRoute(route, currentSourceMiles, proposedScenarioMiles){
+    if(!presentNumber(currentSourceMiles) || !presentNumber(proposedScenarioMiles)) {
+      return {mileageBasisStatus:'Missing Data', isMileageComparable:false, mileageDelta:null, mileageWarningText:'Missing current source miles or proposed scenario miles.'};
+    }
+    const plcs = route?.currentPLCs || [];
+    const hasDallas = plcs.includes('Dallas PLC');
+    const hasWhitestown = plcs.includes('Whitestown PLC');
+    if(hasDallas && hasWhitestown) {
+      return {mileageBasisStatus:'Mixed PLC / Relay Validation', isMileageComparable:false, mileageDelta:null, mileageWarningText:'Validate mixed Dallas/Whitestown PLC route before comparing source miles to scenario miles.'};
+    }
+    if(route?.isRelay || plcs.length !== 1) {
+      return {mileageBasisStatus:'Mixed PLC / Relay Validation', isMileageComparable:false, mileageDelta:null, mileageWarningText:'Validate relay or mixed endpoint pattern before comparing source miles to scenario miles.'};
+    }
+    if(!usesSameStopSet(route)) {
+      return {mileageBasisStatus:'Scenario Only', isMileageComparable:false, mileageDelta:null, mileageWarningText:'Scenario route uses a different stop grouping; mileage delta is scenario-only.'};
+    }
+    return {mileageBasisStatus:'Comparable', isMileageComparable:true, mileageDelta:currentSourceMiles - proposedScenarioMiles, mileageWarningText:''};
+  }
+  function formatMileageDelta(k){ return k?.isMileageComparable ? fmtDelta(-k.mileageDelta).replace('+','') : (k?.mileageBasisStatus === 'Missing Data' ? 'Missing Data' : 'Validate'); }
   function guardedCostPerCase(value, currentWeeklyCost, annualOpportunity, routeName){
     if(value === null || value === undefined || !Number.isFinite(Number(value))) return null;
     const v = Number(value);
@@ -2936,9 +2963,12 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const weeklyCases = Number(route.cases) || 0;
     const weeklyLiters = Number(route.liters) || 0;
     const weeklyPallets = weeklyCases / CASES_PER_PALLET;
-    const currentWorkbookMiles = presentNumber(route.currentMiles);
+    const currentSourceMiles = presentNumber(route.currentMiles);
+    const currentWorkbookMiles = currentSourceMiles;
     const currentWeeklyCost = presentNumber(route.currentTotal);
-    const proposedEstimatedRoadMiles = presentNumber(route.newMiles);
+    const proposedScenarioMiles = presentNumber(route.newMiles);
+    const proposedEstimatedRoadMiles = proposedScenarioMiles;
+    const mileageBasis = mileageBasisForRoute(route, currentSourceMiles, proposedScenarioMiles);
     const proposedWeeklyCost = presentNumber(route.newTotal);
     const weeklyOpportunity = currentWeeklyCost !== null && proposedWeeklyCost !== null ? currentWeeklyCost - proposedWeeklyCost : null;
     const annualOpportunity = weeklyOpportunity !== null ? weeklyOpportunity * 52 : null;
@@ -2953,13 +2983,19 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       weeklyLiters,
       weeklyPallets,
       currentWorkbookMiles,
+      currentSourceMiles,
       currentWeeklyCost,
       currentCostPerCase,
       currentCostPerMile,
       proposedEstimatedRoadMiles,
+      proposedScenarioMiles,
       proposedWeeklyCost,
       weeklyOpportunity,
       annualOpportunity,
+      mileageBasisStatus: mileageBasis.mileageBasisStatus,
+      isMileageComparable: mileageBasis.isMileageComparable,
+      mileageDelta: mileageBasis.mileageDelta,
+      mileageWarningText: mileageBasis.mileageWarningText,
       palletUtilizationPercent: weeklyPallets / COLLECTION_TRAILER.planningPalletThreshold * 100,
       trailerLoads: Math.max(1, Math.ceil(weeklyPallets / COLLECTION_TRAILER.planningPalletThreshold)),
       palletStatus: palletStatus(weeklyPallets)
@@ -2978,11 +3014,12 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       totalWeeklyCases: sumField('weeklyCases'),
       totalWeeklyLiters: sumField('weeklyLiters'),
       totalWeeklyPallets: sumField('weeklyPallets'),
-      totalCurrentWorkbookMiles: sumField('currentWorkbookMiles'),
+      totalCurrentWorkbookMiles: sumField('currentSourceMiles'),
       totalCurrentWeeklyCost,
       portfolioCostPerCase: guardedCostPerCase(safeDivide(totalCurrentWeeklyCost, sumField('weeklyCases')), totalCurrentWeeklyCost, null, 'Portfolio'),
       portfolioCostPerMile: safeDivide(totalCurrentWeeklyCost, sumField('currentWorkbookMiles')),
-      totalProposedEstimatedRoadMiles: sumField('proposedEstimatedRoadMiles'),
+      totalProposedEstimatedRoadMiles: sumField('proposedScenarioMiles'),
+      hasScenarioOnlyMileage: routeKpis.some(r=>!r.isMileageComparable),
       totalProposedWeeklyCost,
       totalWeeklyOpportunity: totalProposedWeeklyCost !== null ? totalCurrentWeeklyCost - totalProposedWeeklyCost : null,
       totalAnnualOpportunity: routeKpis.reduce((a,r)=>a+(Number(r.annualOpportunity)||0),0)
@@ -2996,7 +3033,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     setKpiLabel('kpiCases', 'Weekly Cases');
     setKpiLabel('kpiLiters', 'Weekly Liters');
     setKpiLabel('kpiPallets', 'Weekly Pallets');
-    setKpiLabel('kpiMiles', 'Current Workbook Miles');
+    setKpiLabel('kpiMiles', 'Current Source Miles');
     setKpiLabel('kpiCost', 'Current Weekly Cost');
     setKpiLabel('kpiCostCase', 'Cost / Case');
     $('kpiCenters').textContent = k ? '1' : '0';
@@ -3015,7 +3052,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     setKpiLabel('kpiCases', 'Total Weekly Cases');
     setKpiLabel('kpiLiters', 'Total Weekly Liters');
     setKpiLabel('kpiPallets', 'Total Weekly Pallets');
-    setKpiLabel('kpiMiles', 'Total Current Workbook Miles');
+    setKpiLabel('kpiMiles', 'Total Current Source Miles');
     setKpiLabel('kpiCost', 'Total Current Weekly Cost');
     setKpiLabel('kpiCostCase', 'Portfolio Cost / Case');
     $('kpiCenters').textContent = fmt0(k.routeCount);
@@ -3042,17 +3079,18 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       ${detailMetric('Current route name', esc2(k.routeName))}
       ${detailMetric('Endpoint PLC(s)', esc2(k.endpointPLCs))}
       ${detailMetric('Stops', fmt0(k.stopCount))}
-      ${detailMetric('Current workbook miles', formatMiles(k.currentWorkbookMiles))}
+      ${detailMetric('Current source miles', formatMiles(k.currentSourceMiles))}
       ${detailMetric('Current weekly cost', formatMoney(k.currentWeeklyCost))}
       ${detailMetric('Cases / Pallets', `${formatNumber(k.weeklyCases)} / ${formatNumber(k.weeklyPallets)}`)}
       ${detailMetric('Trailer load', `${fmt0(k.trailerLoads)} load(s) · ${fmt1(k.palletUtilizationPercent)}% · ${esc2(k.palletStatus)}`)}
       ${detailMetric('Proposed workflow', esc2(r.newRouteText))}
-      ${detailMetric('Estimated proposed road miles', formatMiles(k.proposedEstimatedRoadMiles))}
+      ${detailMetric('Proposed scenario miles', formatMiles(k.proposedScenarioMiles))}
+      ${detailMetric('Mileage basis', `${esc2(k.mileageBasisStatus)}${k.mileageWarningText ? ' · '+esc2(k.mileageWarningText) : ''}`)}
       ${detailMetric('Proposed weekly cost', formatMoney(k.proposedWeeklyCost))}
       ${detailMetric('Weekly opportunity', formatMoney(k.weeklyOpportunity))}
       ${detailMetric('Annual opportunity', formatMoney(k.annualOpportunity))}
       ${detailMetric('Confidence / validation', esc2(confidenceText(r)))}
-    </div><div class="opt-section-caption confirmed-caption">${validation}<br><b>Opportunity note:</b> route optimization savings are operational opportunity only unless contract rating or McKesson repricing confirms it.</div></div>`;
+    </div><div class="opt-section-caption confirmed-caption">${validation}<br><b>Opportunity note:</b> route optimization values are operational opportunity only unless contract rating or McKesson repricing confirms invoice impact.</div></div>`;
   }
   function updateOptimizationSummary(rows){
     const selected = $('optRouteFilter')?.value || '';
@@ -3063,7 +3101,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       summary.innerHTML = `<b>Selected route optimization summary</b><br/>Route: <b>${esc2(k.routeName)}</b> · Stops: <b>${fmt0(k.stopCount)}</b><br/>Current weekly cost: <b>${formatMoney(k.currentWeeklyCost)}</b> · Proposed weekly cost: <b>${formatMoney(k.proposedWeeklyCost)}</b><br/>Weekly opportunity: <b>${formatMoney(k.weeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.annualOpportunity)}</b><div class="mini-note">Operational opportunity only. Confirm with contract rating or McKesson repricing before treating as savings.</div>`;
     } else {
       const k = getPortfolioKpis(rows || []);
-      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Operational opportunity only. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.</div>`;
+      const mileageNote = k.hasScenarioOnlyMileage ? ' Portfolio includes scenario-only mileage comparisons. Validate with contract rating or McKesson repricing before treating as savings.' : '';
+      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Operational opportunity only. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.${mileageNote}</div>`;
     }
   }
 
@@ -3192,10 +3231,10 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     }
     if(!rows.length){ table.innerHTML=`<tbody><tr><td><div class="opt-empty-state"><h2>No matching routes</h2><p>Reset filters or choose a different route. Opportunities are operational estimates only.</p></div></td></tr></tbody>`; return; }
     if(!selected && window.codyOptShowAllRoutes){
-      const headers=['Route','Action / Recommendation','Origin','Trailer','Current PLC','Proposed Route / PLC','Current Workbook Miles','Proposed Estimated Miles','Current Weekly Cost','Proposed Weekly Cost','Weekly Opportunity','Annual Opportunity','Weekly Cases','Weekly Pallets','Pallet Utilization'];
+      const headers=['Route','Action / Recommendation','Origin','Trailer','Current PLC','Proposed Route / PLC','Current Source Miles','Proposed Scenario Miles','Mileage Basis','Mileage Delta','Current Weekly Cost','Proposed Weekly Cost','Weekly Opportunity','Annual Opportunity','Weekly Cases','Weekly Pallets','Pallet Utilization'];
       table.innerHTML=`<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>{
         const k=getRouteKpis(r); const v=validationWarningsForRoute(r.route,r.cases,r.newMiles); const origin=originForRoute(r.route,r.stops);
-        return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft · ${esc2(v.trailer.label)}</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${formatMiles(k.currentWorkbookMiles)}</td><td>${formatMiles(k.proposedEstimatedRoadMiles)}</td><td>${formatMoney(k.currentWeeklyCost)}</td><td>${formatMoney(k.proposedWeeklyCost)}</td><td>${formatMoney(k.weeklyOpportunity)}</td><td><b>${formatMoney(k.annualOpportunity)}</b></td><td>${formatNumber(k.weeklyCases)}</td><td>${formatNumber(k.weeklyPallets)}</td><td>${esc2(k.palletStatus)} · ${fmt1(k.palletUtilizationPercent)}%</td></tr>`;
+        return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft · ${esc2(v.trailer.label)}</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${formatMiles(k.currentSourceMiles)}</td><td>${formatMiles(k.proposedScenarioMiles)}</td><td>${esc2(k.mileageBasisStatus)}</td><td>${formatMileageDelta(k)}</td><td>${formatMoney(k.currentWeeklyCost)}</td><td>${formatMoney(k.proposedWeeklyCost)}</td><td>${formatMoney(k.weeklyOpportunity)}</td><td><b>${formatMoney(k.annualOpportunity)}</b></td><td>${formatNumber(k.weeklyCases)}</td><td>${formatNumber(k.weeklyPallets)}</td><td>${esc2(k.palletStatus)} · ${fmt1(k.palletUtilizationPercent)}%</td></tr>`;
       }).join('')}</tbody>`;
       return;
     }
