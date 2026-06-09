@@ -160,6 +160,38 @@ function readXlsx(fileName) {
   }
 }
 
+function firstPresent(row, fields) {
+  for (const field of fields) {
+    if (row[field] !== undefined && row[field] !== null && row[field] !== '') return row[field];
+  }
+  return '';
+}
+
+function numericValue(value) {
+  const n = Number(String(value ?? '').replace(/[$,]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function validBillingRow(row) {
+  const identity = firstPresent(row, ['bOL', 'bol', 'invoiceNo', 'routeNameMckensson', 'routeNameMckesson', 'routeName', 'stopLocation']);
+  const amount = numericValue(firstPresent(row, ['linehaulAmount', 'fuelSurcharge', 'bOLTotal', 'bolTotal', 'cases', 'miles', 'rateMiles']));
+  const text = Object.values(row).join(' ').trim();
+  return Boolean(identity && amount && !/^invoice\s+|^route\s+|^total\s*$/i.test(text));
+}
+
+function normalizeBillingRows(rows) {
+  return rows.filter(validBillingRow).map((row) => ({
+    ...row,
+    linehaulAmount: numericValue(firstPresent(row, ['linehaulAmount', 'Linehaul Amount'])),
+    fuelSurcharge: numericValue(firstPresent(row, ['fuelSurcharge', 'Fuel Surcharge'])),
+    bOLTotal: numericValue(firstPresent(row, ['bOLTotal', 'bolTotal', 'BOL Total'])),
+    invoiceDate: firstPresent(row, ['invoiceDate', 'Invoice Date']),
+    pickupDate: firstPresent(row, ['pickupDate', 'Pickup Date']),
+    invoiceNo: firstPresent(row, ['invoiceNo', 'Invoice No']),
+    bol: firstPresent(row, ['bOL', 'bol', 'BOL'])
+  }));
+}
+
 function readDocx(fileName) {
   const filePath = path.join(sourceDir, fileName);
   if (!existsSync(filePath)) { note(fileName, 'missing', 'Source file is missing.'); return []; }
@@ -220,7 +252,7 @@ const weekBStops = readDocx(SOURCES.weekBStops);
 
 mkdirSync(outDir, { recursive: true });
 const outputs = {
-  'billingFY26.json': billingFY26,
+  'billingFY26.json': normalizeBillingRows(billingFY26),
   'scheduledCenters.json': scheduledCenters,
   'weekAStops.json': weekAStops,
   'weekBStops.json': weekBStops,
@@ -231,7 +263,7 @@ const outputs = {
   'dataQuality.json': dataQuality,
   'contractAssumptions.json': [{ source: 'generated-by-build-data', casesPerPallet: 70, collectionTrailer: '48 ft refrigerated trailer', fuelSurchargeRule: '1% per full $0.08 above $1.70/gallon' }],
   'contractRules.json': [{ source: 'generated-by-build-data', rule: 'Validate billing mileage against contract rating, PC Miler/e-Miler, or invoice mileage where available.' }],
-  'specialCharges.json': buildSpecialCharges([...billingFY26, ...rateTableRows])
+  'specialCharges.json': buildSpecialCharges([...normalizeBillingRows(billingFY26), ...rateTableRows])
 };
 
 for (const [fileName, payload] of Object.entries(outputs)) {
