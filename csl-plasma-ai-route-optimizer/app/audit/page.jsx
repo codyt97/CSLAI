@@ -27,7 +27,7 @@ const SOURCE_STATUS_STYLES = {
 
 const CONTRACT_RULES = [
   ['Invoice baseline', 'Uses available billing/runtime data as the invoice baseline.', 'Fallback-derived values should be replaced with source-parsed billing JSON when available.'],
-  ['Route-mile reductions', 'Shown as operational opportunity only, not confirmed invoice savings.', 'Savings require contract rating or McKesson repricing confirmation.'],
+  ['Route-mile reductions', 'Shown as operational opportunity only, not validated invoice impact.', 'Savings require contract rating or McKesson repricing confirmation.'],
   ['Geoapify road miles', 'Used for visualization and scenario modeling only.', 'Validate contract billing mileage against PC Miler/e-Miler or invoice mileage where available.'],
   ['Deadhead / truck-origin miles', 'Shown for operational visibility only.', 'Treat as non-billable unless a source confirms they are billable.'],
   ['Fuel surcharge', '1% for each full $0.08 diesel increase above $1.70/gallon.', 'Rows need diesel average and linehaul/fuel values to calculate variance.'],
@@ -198,7 +198,7 @@ export default function AuditPage() {
           </header>
 
           <p style={styles.warning}>
-            Current audit uses available runtime data. Route-mile reduction is shown as operational opportunity only and is not confirmed invoice savings unless contract rating or McKesson repricing confirms it.
+            Current audit uses available runtime data. Route-mile reduction is shown as operational opportunity only and is not validated invoice impact unless contract rating or McKesson repricing confirms it.
           </p>
 
           {error && <p style={styles.error}>{error}</p>}
