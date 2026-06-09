@@ -43,10 +43,25 @@ function hasAnyMoney(row) {
   return MONEY_FIELDS.some((field) => Number.isFinite(Number(row[field])) && Number(row[field]) !== 0);
 }
 
-function addDays(value, days) {
-  if (!value) return { date: null, status: ALLOWED_STATUS.MISSING };
+function normalizeDate(value) {
+  if (!value) return null;
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 30000) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    return new Date(excelEpoch + numericValue * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { date: null, status: ALLOWED_STATUS.MISSING };
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(value, days) {
+  const isoDate = normalizeDate(value);
+  if (!isoDate) return { date: null, status: ALLOWED_STATUS.MISSING };
+
+  const date = new Date(isoDate);
   date.setUTCDate(date.getUTCDate() + days);
   const iso = date.toISOString().slice(0, 10);
   return { date: iso, status: date < new Date() ? ALLOWED_STATUS.EXPIRED : ALLOWED_STATUS.OK };
@@ -87,8 +102,8 @@ function auditRow(row, centerNames) {
   const totalCost = numberValue(row, ['totalRouteCost', 'sumBilledWeekly', 'totalCost', 'invoiceTotal']) || linehaul + fuelSurcharge;
   const costPerCase = cases > 0 ? totalCost / cases : 0;
   const costPerMile = miles > 0 ? totalCost / miles : 0;
-  const invoiceDate = firstValue(row, ['invoiceDate', 'invoice_date']);
-  const pickupDate = firstValue(row, ['pickupDate', 'pickup_date', 'serviceDate']);
+  const invoiceDate = normalizeDate(firstValue(row, ['invoiceDate', 'invoice_date']));
+  const pickupDate = normalizeDate(firstValue(row, ['pickupDate', 'pickup_date', 'serviceDate']));
   const disputeDeadline = addDays(invoiceDate, 30);
   const overchargeDeadline = addDays(pickupDate, 180);
 
@@ -129,6 +144,8 @@ function auditRow(row, centerNames) {
     totalCost,
     costPerCase: cases > 0 ? Number(costPerCase.toFixed(2)) : null,
     costPerMile: miles > 0 ? Number(costPerMile.toFixed(2)) : null,
+    invoiceDate,
+    pickupDate,
     invoiceDisputeDeadline: disputeDeadline.date,
     invoiceDisputeDeadlineStatus: disputeDeadline.status,
     overchargeUnderchargeDeadline: overchargeDeadline.date,
