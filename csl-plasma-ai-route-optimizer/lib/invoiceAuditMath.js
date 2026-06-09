@@ -16,7 +16,8 @@ const BILLING_FIELDS = {
   centerName: ['Stop Location', 'stopLocation', 'centerName'],
   plc: ['PLC', 'pLC', 'plc', 'Destination PLC', 'destinationPLC'],
   cases: ['Cases', 'cases'],
-  miles: ['Miles', 'miles', 'Rate Miles', 'rateMiles'],
+  miles: ['Miles', 'miles'],
+  rateMiles: ['Rate Miles', 'rateMiles'],
   linehaul: ['Linehaul Amount', 'linehaulAmount', 'linehaul'],
   fuelSurcharge: ['Fuel Surcharge', 'fuelSurcharge'],
   totalCost: ['BOL Total', 'bOLTotal', 'bolTotal', 'totalCost'],
@@ -27,6 +28,10 @@ const BILLING_FIELDS = {
   bol: ['BOL', 'bOL', 'bol'],
   invoiceNo: ['Invoice No', 'invoiceNo']
 };
+const CASES_PER_PALLET = 70;
+const REEFER_48_FOOT_MAX_PALLETS = 24;
+const HIGH_UTILIZATION_PALLETS = REEFER_48_FOOT_MAX_PALLETS * 0.9;
+const UNDERUTILIZED_PALLETS = REEFER_48_FOOT_MAX_PALLETS * 0.5;
 
 function readJson(fileName) {
   if (!['billingFY26.json', 'records.json'].includes(fileName)) return null;
@@ -64,14 +69,45 @@ function hasNumberValue(row, fields) {
 }
 
 function isValidBillingRow(row) {
-  return hasTextValue(row, BILLING_FIELDS.bol)
+  const hasIdentity = hasTextValue(row, BILLING_FIELDS.bol)
     || hasTextValue(row, BILLING_FIELDS.routeName)
-    || hasTextValue(row, BILLING_FIELDS.centerName)
-    || hasNumberValue(row, BILLING_FIELDS.cases)
+    || hasTextValue(row, BILLING_FIELDS.centerName);
+  const hasQuantityOrAmount = hasNumberValue(row, BILLING_FIELDS.cases)
     || hasNumberValue(row, BILLING_FIELDS.miles)
+    || hasNumberValue(row, BILLING_FIELDS.rateMiles)
     || hasNumberValue(row, BILLING_FIELDS.linehaul)
     || hasNumberValue(row, BILLING_FIELDS.fuelSurcharge)
     || hasNumberValue(row, BILLING_FIELDS.totalCost);
+
+  return hasIdentity && hasQuantityOrAmount;
+}
+
+function preferredNumberValue(row, primaryFields, fallbackFields = []) {
+  const primary = numberValue(row, primaryFields);
+  return primary || numberValue(row, fallbackFields);
+}
+
+function rowTotalCost(row, linehaul, fuelSurcharge) {
+  const bolTotal = firstValue(row, BILLING_FIELDS.totalCost);
+  if (bolTotal !== undefined) {
+    const parsed = Number(bolTotal);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  const fallbackTotal = numberValue(row, ['totalRouteCost', 'sumBilledWeekly']);
+  return fallbackTotal || linehaul + fuelSurcharge;
+}
+
+function palletUtilization(cases) {
+  const estimatedPallets = cases / CASES_PER_PALLET;
+  const palletUtilizationPercent = (estimatedPallets / REEFER_48_FOOT_MAX_PALLETS) * 100;
+  return {
+    estimatedPallets,
+    palletUtilizationPercent,
+    overCapacity: estimatedPallets > REEFER_48_FOOT_MAX_PALLETS,
+    highUtilization: estimatedPallets >= HIGH_UTILIZATION_PALLETS && estimatedPallets <= REEFER_48_FOOT_MAX_PALLETS,
+    underutilized: estimatedPallets < UNDERUTILIZED_PALLETS
+  };
 }
 
 function hasAnyMoney(row) {
@@ -131,10 +167,10 @@ function auditRow(row, centerNames) {
   const centerName = firstValue(row, BILLING_FIELDS.centerName) || firstValue(row, ['name']) || centerNames.get(String(centerNumber || '').trim()) || centerNames.get(String(Number(centerNumber)));
   const plc = firstValue(row, [...BILLING_FIELDS.plc, 'actualPLC', 'basePLC', 'originPLC']);
   const cases = numberValue(row, ['weeklyCases', ...BILLING_FIELDS.cases, 'caseCount']);
-  const miles = numberValue(row, ['weeklyMiles', ...BILLING_FIELDS.miles, 'routeMiles']);
-  const linehaul = numberValue(row, ['linehaulCost', ...BILLING_FIELDS.linehaul]);
-  const fuelSurcharge = numberValue(row, ['fuelSurchargeDollar', ...BILLING_FIELDS.fuelSurcharge, 'fuel']);
-  const totalCost = numberValue(row, ['totalRouteCost', 'sumBilledWeekly', ...BILLING_FIELDS.totalCost]) || linehaul + fuelSurcharge;
+  const miles = preferredNumberValue(row, BILLING_FIELDS.miles, [...BILLING_FIELDS.rateMiles, 'weeklyMiles', 'routeMiles']);
+  const linehaul = numberValue(row, [...BILLING_FIELDS.linehaul, 'linehaulCost']);
+  const fuelSurcharge = numberValue(row, [...BILLING_FIELDS.fuelSurcharge, 'fuelSurchargeDollar', 'fuel']);
+  const totalCost = rowTotalCost(row, linehaul, fuelSurcharge);
   const sourceCostPerCase = numberValue(row, BILLING_FIELDS.costPerCase);
   const sourceCostPerMile = numberValue(row, BILLING_FIELDS.costPerMile);
   const costPerCase = sourceCostPerCase || (cases > 0 ? totalCost / cases : 0);
@@ -143,6 +179,7 @@ function auditRow(row, centerNames) {
   const pickupDate = normalizeDate(firstValue(row, BILLING_FIELDS.pickupDate));
   const bol = firstValue(row, BILLING_FIELDS.bol);
   const invoiceNo = firstValue(row, BILLING_FIELDS.invoiceNo);
+  const utilization = palletUtilization(cases);
   const disputeDeadline = addDays(invoiceDate, 30);
   const overchargeDeadline = addDays(pickupDate, 180);
 
@@ -185,6 +222,12 @@ function auditRow(row, centerNames) {
     totalCost,
     costPerCase: cases > 0 ? Number(costPerCase.toFixed(2)) : null,
     costPerMile: miles > 0 ? Number(costPerMile.toFixed(2)) : null,
+    estimatedPallets: Number(utilization.estimatedPallets.toFixed(2)),
+    palletUtilizationPercent: Number(utilization.palletUtilizationPercent.toFixed(2)),
+    reefer48FootMaxPallets: REEFER_48_FOOT_MAX_PALLETS,
+    overCapacity: utilization.overCapacity,
+    highUtilization: utilization.highUtilization,
+    underutilized: utilization.underutilized,
     invoiceDate,
     pickupDate,
     invoiceDisputeDeadline: disputeDeadline.date,

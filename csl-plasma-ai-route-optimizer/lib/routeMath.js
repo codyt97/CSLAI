@@ -9,11 +9,14 @@ export const ASSUMPTIONS = {
   collectionTrailer: '48 ft specialized refrigerated trailer',
   shuttleTrailer: '53 ft trailer for Kankakee/facility-to-facility shuttle only',
   casesPerPallet: 70,
+  reefer48FootMaxPallets: 24,
+  highUtilizationPalletThreshold: 21.6,
+  underutilizedPalletThreshold: 12,
   k3BasketSizeInches: '24 x 20 x 7',
   standardCaseSizeInches: '13.63 x 10.5 x 12',
   k3BasketsPerPallet: 20,
   k3CasesPerPallet: 56,
-  palletWarningThreshold: 18,
+  palletWarningThreshold: 24,
   driverHourLimit: 11,
   defaultSpeedMph: Number(process.env.DEFAULT_AVERAGE_TRUCK_SPEED_MPH || 55)
 };
@@ -142,6 +145,12 @@ export function summarizeRouteGroup(routeName, stops) {
 
     weeklyCases: round(cases, 2),
     weeklyPallets: round(pallets, 2),
+    estimatedPallets: round(pallets, 2),
+    palletUtilizationPercent: round((pallets / ASSUMPTIONS.reefer48FootMaxPallets) * 100, 2),
+    reefer48FootMaxPallets: ASSUMPTIONS.reefer48FootMaxPallets,
+    overCapacity: pallets > ASSUMPTIONS.reefer48FootMaxPallets,
+    highUtilization: pallets >= ASSUMPTIONS.highUtilizationPalletThreshold && pallets <= ASSUMPTIONS.reefer48FootMaxPallets,
+    underutilized: pallets < ASSUMPTIONS.underutilizedPalletThreshold,
     weeklyLiters: round(sum(stops.map((s) => s.weeklyLiters)), 2),
 
     // Correct route-level mileage fields.
@@ -341,8 +350,15 @@ export function calculateRateTableCost({
     totalCost: round(totalCost, 2),
     fuelPct: round(averageFuelPct * 100, 2),
     pallets: round(pallets, 2),
+    estimatedPallets: round(pallets, 2),
     casesPerPallet: ASSUMPTIONS.casesPerPallet,
+    reefer48FootMaxPallets: ASSUMPTIONS.reefer48FootMaxPallets,
+    palletUtilizationPercent: round((pallets / ASSUMPTIONS.reefer48FootMaxPallets) * 100, 2),
     trailer: ASSUMPTIONS.collectionTrailer,
+    overCapacity: pallets > ASSUMPTIONS.reefer48FootMaxPallets,
+    highUtilization: pallets >= ASSUMPTIONS.highUtilizationPalletThreshold && pallets <= ASSUMPTIONS.reefer48FootMaxPallets,
+    underutilized: pallets < ASSUMPTIONS.underutilizedPalletThreshold,
+    over24PalletWarning: pallets > ASSUMPTIONS.palletWarningThreshold,
     over18PalletWarning: pallets > ASSUMPTIONS.palletWarningThreshold,
     driverHours: round(driverHours, 2),
     over11HourDriverWarning: driverHours > ASSUMPTIONS.driverHourLimit,
@@ -506,8 +522,12 @@ export function validationRisks(routeGroup, proposed) {
     risks.push('Relay route: validate Dallas/Whitestown volume need and relay staffing before change.');
   }
 
-  if (proposed.over18PalletWarning) {
-    risks.push('Over 18-pallet caution threshold for 48 ft refrigerated collection route.');
+  if (proposed.overCapacity || proposed.over24PalletWarning) {
+    risks.push('Over Capacity: estimated pallets exceed 24-pallet max for 48 ft refrigerated collection route.');
+  } else if (proposed.highUtilization) {
+    risks.push('High Utilization: estimated pallets are between 21.6 and 24 for 48 ft refrigerated collection route.');
+  } else if (proposed.underutilized) {
+    risks.push('Underutilized: estimated pallets are below 12 for 48 ft refrigerated collection route.');
   }
 
   if (proposed.over11HourDriverWarning) {
