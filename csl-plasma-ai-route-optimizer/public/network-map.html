@@ -145,6 +145,7 @@
     .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
     .data-chip{border:1px solid #bfdbfe;background:#dbeafe;color:#1e3a8a;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
     .warning-chip{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+    .source-chip{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}
 
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
@@ -421,7 +422,7 @@ body.optimization-active aside{padding-bottom:34px;}
       <div class="ai-assistant-card">
         <h2>AI Assistant</h2>
         <div class="sub" style="margin-bottom:8px">Ask questions about routes, invoices, KPIs, optimization, and audit findings.</div>
-        <div class="notice" id="aiChatSetupWarning"><b>Setup:</b> AI-authored answers require the server OpenAI key and model environment variables. If missing, the assistant returns deterministic app-data answers with a setup warning.</div>
+        <div class="notice" id="aiChatSetupWarning" style="display:none"><b>Setup:</b> AI status is being checked.</div>
         <div class="ai-chat-starters" id="aiChatStarters"></div>
         <div class="ai-chat-history" id="aiChatHistory">
           <div class="ai-chat-msg assistant">Ask a question about CSL Plasma transportation data. I will use compact app context and will not claim validated invoice impact.</div>
@@ -3719,11 +3720,13 @@ function refreshAiAssistant(){
       .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
       .replace(/^- (.*)$/gm,'• $1');
   }
-  function renderChatMeta(dataUsed=[], warnings=[]){
+  function renderChatMeta(dataUsed=[], warnings=[], source=''){
     const meta=$('aiChatMeta'); if(!meta) return;
     const data=(dataUsed||[]).map(x=>`<span class="data-chip">${chatEscape(x)}</span>`).join('');
     const warn=(warnings||[]).slice(0,8).map(x=>`<span class="warning-chip">${chatEscape(x)}</span>`).join('');
-    meta.innerHTML=`${data?`<div><b>Data used</b><div class="chip-row">${data}</div></div>`:''}${warn?`<div><b>Warnings</b><div class="chip-row">${warn}</div></div>`:'<span class="mini-note">No validation warnings returned for the last answer.</span>'}`;
+    const sourceLabel=source==='openai'?'AI answer':source==='deterministic-fallback'?'Fallback answer':'';
+    const sourceHtml=sourceLabel?`<span class="source-chip">${sourceLabel}</span>`:'';
+    meta.innerHTML=`${sourceHtml?`<div class="chip-row">${sourceHtml}</div>`:''}${data?`<div><b>Data used</b><div class="chip-row">${data}</div></div>`:''}${warn?`<div><b>Warnings</b><div class="chip-row">${warn}</div></div>`:'<span class="mini-note">No validation warnings returned for the last answer.</span>'}`;
   }
   function appendMessage(role, content, extraClass=''){
     const history=$('aiChatHistory'); if(!history) return;
@@ -3741,6 +3744,17 @@ function refreshAiAssistant(){
     box.innerHTML=starterQuestions.map(q=>`<button class="action" type="button" data-ai-starter="${chatEscape(q)}">${chatEscape(q)}</button>`).join('');
     box.querySelectorAll('[data-ai-starter]').forEach(btn=>btn.addEventListener('click',()=>{ const input=$('aiChatInput'); if(input){ input.value=btn.dataset.aiStarter; sendAiChat(); } }));
   }
+  async function checkAiStatus(){
+    const warn=$('aiChatSetupWarning'); if(!warn) return;
+    try{
+      const res=await fetch('/api/ai-chat');
+      const json=await res.json();
+      if(json.configured){ warn.style.display='none'; warn.innerHTML=''; }
+      else { warn.style.display='block'; warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; }
+    }catch(err){
+      warn.style.display='block'; warn.innerHTML='<b>Status warning:</b> AI status could not be verified.';
+    }
+  }
   async function sendAiChat(){
     const input=$('aiChatInput'); if(!input) return;
     const text=String(input.value||'').trim(); if(!text) return;
@@ -3755,19 +3769,20 @@ function refreshAiAssistant(){
       if(!res.ok && !(json && json.answer)) throw new Error(json?.warnings?.join('; ') || json?.error || 'AI Assistant request failed');
       appendMessage('assistant', json.answer || 'No answer returned.');
       messages.push({role:'assistant', content:json.answer || ''});
-      renderChatMeta(json.dataUsed || [], json.warnings || []);
-      if(res.status===503){ const warn=$('aiChatSetupWarning'); if(warn) warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; }
+      renderChatMeta(json.dataUsed || [], json.warnings || [], json.source || '');
+      if(res.status===503){ const warn=$('aiChatSetupWarning'); if(warn){ warn.style.display='block'; warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; } }
     }catch(err){
       appendMessage('assistant', `Error: ${err.message}`, 'error');
-      renderChatMeta([], [err.message]);
+      renderChatMeta([], [err.message], 'deterministic-fallback');
     }finally{
       setLoading(false);
     }
   }
   window.sendAiChat=sendAiChat;
   renderStarters();
+  checkAiStatus();
   const send=$('aiChatSend'); if(send) send.addEventListener('click', sendAiChat);
-  const clear=$('aiChatClear'); if(clear) clear.addEventListener('click', ()=>{ messages.length=0; const h=$('aiChatHistory'); if(h) h.innerHTML='<div class="ai-chat-msg assistant">Chat cleared. Ask a route, invoice, KPI, optimization, or audit question.</div>'; renderChatMeta([], []); });
+  const clear=$('aiChatClear'); if(clear) clear.addEventListener('click', ()=>{ messages.length=0; const h=$('aiChatHistory'); if(h) h.innerHTML='<div class="ai-chat-msg assistant">Chat cleared. Ask a route, invoice, KPI, optimization, or audit question.</div>'; renderChatMeta([], [], ''); });
   const explain=$('aiChatExplainRoute'); if(explain) explain.addEventListener('click', ()=>{ const route=$('optRouteFilter')?.value || $('scheduleRouteFilter')?.value || 'PHILLY'; const input=$('aiChatInput'); if(input){ input.value=`Explain ${route}`; sendAiChat(); } });
   const input=$('aiChatInput'); if(input) input.addEventListener('keydown', (event)=>{ if((event.metaKey||event.ctrlKey) && event.key==='Enter') sendAiChat(); });
 })();

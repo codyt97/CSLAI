@@ -46,13 +46,15 @@ function detectTerms(question = '') {
   return {
     asksInvoice: /invoice|bol|audit row|linehaul|pickup date|dispute|overcharge/.test(q),
     asksFuel: /fuel|surcharge|diesel|fsc/.test(q),
-    asksOptimization: /optimization|opportunity|scenario|regroup|move|candidate|actionable|exploratory|review first|top/.test(q),
+    asksOptimization: /optimization|opportunity|scenario|regroup|move|candidate|actionable|exploratory|review first|\btop\b/.test(q),
     asksMileage: /mileage|miles|source miles|scenario miles|basis/.test(q),
     asksPallets: /pallet|utilization|capacity|underutilized|over 21\.6|high utilization|reefer/.test(q),
     asksPlcRelay: /plc|relay|mckesson|validation|mixed/.test(q),
     asksDataQuality: /missing|data quality|source-parsed|files|raw|generated|why can.t we call/.test(q),
     asksExecutive: /summarize|summary|bruno|viviana|top 5|present/.test(q),
-    asksCompare: /compare| vs |versus/.test(q)
+    asksCompare: /compare| vs |versus/.test(q),
+    asksShipmentVolume: /shipment|shipments|pickup count|pickup stops|stops per week|routes per week|shipments weekly|weekly shipments|average shipments/.test(q),
+    asksDataInventory: /what data do we have|what data is available|available data|data do we have|data available/.test(q)
   };
 }
 
@@ -270,6 +272,58 @@ function dataQualitySummary() {
   };
 }
 
+
+function fileSummaryByName(summary, fileName) {
+  return (summary.files || []).find((file) => file.fileName === fileName) || {};
+}
+
+function scheduleActivitySummary() {
+  const summary = getDataSummary();
+  const groups = groupRouteRecords({ openOnly: true });
+  const invoice = getInvoiceAudit();
+  const weekA = fileSummaryByName(summary, 'weekAStops.json');
+  const weekB = fileSummaryByName(summary, 'weekBStops.json');
+  const scheduled = fileSummaryByName(summary, 'scheduledCenters.json');
+  return {
+    trueShipmentCountAvailable: false,
+    limitation: 'True shipment count per week is not directly available unless each BOL row represents one shipment and billing/pickup dates are grouped by week.',
+    weekAScheduledStops: Number(weekA.recordCount) || 0,
+    weekBScheduledStops: Number(weekB.recordCount) || 0,
+    scheduledCenters: Number(scheduled.recordCount) || 0,
+    routeGroupCount: groups.length,
+    invoiceBillingRows: invoice.totalRows,
+    invoiceBillingRowsLabel: 'valid invoice audit billing rows, not necessarily weekly shipments',
+    sourceStatuses: {
+      weekAStops: weekA.sourceStatus || 'missing',
+      weekBStops: weekB.sourceStatus || 'missing',
+      scheduledCenters: scheduled.sourceStatus || 'missing',
+      billingFY26: invoice.sourceStatus?.billingFY26 || 'missing'
+    }
+  };
+}
+
+function dataInventorySummary() {
+  const summary = getDataSummary();
+  return {
+    availableData: [
+      'Route schedules and pickup stop records for Week A and Week B.',
+      'Open/scheduled center data with route, PLC, city/state, cases, liters, and pallet calculations.',
+      'Route-level KPIs including current weekly cost, weekly cases, Cost / Case, source miles, scenario miles, mileage basis, and utilization status.',
+      'Billing rows used by invoice audit, including linehaul, fuel surcharge, BOL total, invoice date, pickup date, dispute deadline, and overcharge deadline where present.',
+      'Fuel surcharge audit summary and review rows.',
+      'Optimization scenario candidates and AI pickup regrouping recommendation buckets.',
+      'Contract assumptions/rules already embedded in runtime JSON and code, including 70 cases per pallet and 24-pallet 48-ft reefer max.'
+    ],
+    missingForTrueShipmentPerWeek: [
+      'A confirmed shipment identifier/count by week.',
+      'A rule confirming whether each BOL row equals one shipment.',
+      'Billing or pickup dates grouped into weekly shipment periods.',
+      'McKesson/contract validation before treating scenario opportunities as invoice impact.'
+    ],
+    fileStatuses: (summary.files || []).map((file) => ({ fileName: file.fileName, sourceStatus: file.sourceStatus, recordCount: file.recordCount }))
+  };
+}
+
 function centerMatches(routeNames) {
   if (!routeNames.length) return [];
   return getAllRecords()
@@ -321,9 +375,19 @@ export function buildAiChatContext({ question = '', routeName = '', mode = '' } 
 
   if (includePortfolio) {
     context.portfolio = portfolioSummary(groups);
-    context.dataUsed.push(DATA_USED.ROUTE_KPIS, DATA_USED.OPTIMIZATION);
+    context.dataUsed.push(DATA_USED.ROUTE_KPIS);
+    if (!terms.asksShipmentVolume || terms.asksOptimization) context.dataUsed.push(DATA_USED.OPTIMIZATION);
   }
   if (selectedGroups.length) context.dataUsed.push(DATA_USED.ROUTE_KPIS, DATA_USED.CENTER_DATA);
+  if (terms.asksShipmentVolume) {
+    context.scheduleActivity = scheduleActivitySummary();
+    context.dataUsed.push(DATA_USED.ROUTE_KPIS, DATA_USED.INVOICE, DATA_USED.DATA_QUALITY);
+  }
+  if (terms.asksDataInventory) {
+    context.dataInventory = dataInventorySummary();
+    context.scheduleActivity ||= scheduleActivitySummary();
+    context.dataUsed.push(DATA_USED.ROUTE_KPIS, DATA_USED.CENTER_DATA, DATA_USED.INVOICE, DATA_USED.FUEL, DATA_USED.OPTIMIZATION, DATA_USED.AI_PICKUP, DATA_USED.DATA_QUALITY, DATA_USED.CONTRACT);
+  }
   if (terms.asksInvoice || terms.asksExecutive || terms.asksDataQuality) {
     context.invoiceAudit = invoiceSummary();
     context.dataUsed.push(DATA_USED.INVOICE);
@@ -351,7 +415,22 @@ export function deterministicAnswer(context) {
   const q = (context.question || '').toLowerCase();
   const lines = [];
 
-  if (/can we call|confirmed|actual benefit|guaranteed/.test(q)) {
+  if (context.scheduleActivity && /shipment|pickup count|pickup stops|stops per week|routes per week|shipments weekly|weekly shipments|average shipments/.test(q)) {
+    const s = context.scheduleActivity;
+    lines.push(`True shipment count per week is not directly available from the current app data unless each BOL row represents one shipment and the billing or pickup date can be grouped by week.`);
+    lines.push(`Closest available proxies:`);
+    lines.push(`- Week A scheduled pickup stops: ${s.weekAScheduledStops.toLocaleString()}.`);
+    lines.push(`- Week B scheduled pickup stops: ${s.weekBScheduledStops.toLocaleString()}.`);
+    lines.push(`- Route groups: ${s.routeGroupCount.toLocaleString()}.`);
+    lines.push(`- Scheduled centers: ${s.scheduledCenters.toLocaleString()}.`);
+    lines.push(`- Invoice audit billing rows: ${s.invoiceBillingRows.toLocaleString()} valid billing rows. These are billing rows, not necessarily weekly shipments.`);
+    lines.push(`Do not use cases, pallets, route count, or cost as a shipment count.`);
+  } else if (context.dataInventory && /what data|available data|data do we have|data is available/.test(q)) {
+    lines.push('The current app has these data areas available:');
+    for (const item of context.dataInventory.availableData) lines.push(`- ${item}`);
+    lines.push('For a true shipment/week calculation, the missing items are:');
+    for (const item of context.dataInventory.missingForTrueShipmentPerWeek) lines.push(`- ${item}`);
+  } else if (/can we call|confirmed|actual benefit|guaranteed/.test(q)) {
     lines.push('No. Use “operational opportunity” or “scenario opportunity,” not validated invoice impact. Contract rating or McKesson repricing is required before treating any route-mile or regrouping scenario as invoice impact.');
   } else if (context.routes?.length) {
     for (const route of context.routes) {
@@ -396,6 +475,7 @@ export function suggestedFollowups(context) {
     route ? `What validation is needed for ${route}?` : 'Which routes are underutilized?',
     'Why can’t we call this invoice impact yet?',
     'What does the fuel surcharge audit show?',
+    'How many pickup stops per week?',
     'Summarize the invoice audit findings.'
   ]).slice(0, 5);
 }

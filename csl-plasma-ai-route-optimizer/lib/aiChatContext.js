@@ -15,6 +15,7 @@ export function buildFallbackChatResponse(context, extraWarning = '') {
     answer: deterministicAnswer(context),
     dataUsed: context.dataUsed || [],
     warnings: [...(context.warnings || []), extraWarning].filter(Boolean),
-    suggestedFollowups: suggestedFollowups(context)
+    suggestedFollowups: suggestedFollowups(context),
+    source: 'deterministic-fallback'
   };
 }

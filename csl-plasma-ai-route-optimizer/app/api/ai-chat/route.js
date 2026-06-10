@@ -14,6 +14,15 @@ function extractText(data) {
   return data.output_text || data.output?.flatMap((item) => item.content || []).map((content) => content.text || '').join('') || '';
 }
 
+export async function GET() {
+  const configured = Boolean(process.env.OPENAI_API_KEY);
+  return Response.json({
+    configured,
+    model: configured ? (process.env.OPENAI_MODEL || 'gpt-5.5') : '',
+    message: configured ? 'AI assistant is configured' : 'OPENAI_API_KEY is missing'
+  });
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -53,7 +62,8 @@ export async function POST(req) {
         answer,
         dataUsed: context.dataUsed || [],
         warnings: context.warnings || [],
-        suggestedFollowups: suggestedFollowups(context)
+        suggestedFollowups: suggestedFollowups(context),
+        source: 'openai'
       });
     } catch (err) {
       return Response.json(buildFallbackChatResponse(context, `AI request failed; returned deterministic app-data answer. ${err.message}`));
@@ -63,7 +73,8 @@ export async function POST(req) {
       answer: 'The AI Assistant could not process that request. Please try again with a route, invoice, fuel audit, KPI, or optimization question.',
       dataUsed: [],
       warnings: [err.message],
-      suggestedFollowups: ['Summarize the invoice audit findings.', 'Explain PHILLY.', 'What does the fuel surcharge audit show?']
+      suggestedFollowups: ['Summarize the invoice audit findings.', 'Explain PHILLY.', 'What does the fuel surcharge audit show?'],
+      source: 'deterministic-fallback'
     }, { status: 400 });
   }
 }
