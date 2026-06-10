@@ -146,6 +146,8 @@
     .data-chip{border:1px solid #bfdbfe;background:#dbeafe;color:#1e3a8a;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
     .warning-chip{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
     .source-chip{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}
+    .scenario-card{border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:12px;margin:12px 0;font-size:12px;line-height:1.42}
+    .scenario-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.scenario-kpi{background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:8px}.scenario-kpi b{display:block;font-size:16px;color:#1d4ed8}
 
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
@@ -438,6 +440,31 @@ body.optimization-active aside{padding-bottom:34px;}
     </div>
 
 
+    <div id="maxSavingsPanel" class="view-panel hidden">
+      <div class="scenario-card">
+        <h2>Max Savings AI Optimizer</h2>
+        <div class="sub" style="margin-bottom:8px">Build and inspect current baseline, conservative, balanced, and max savings optimization scenarios. Scenario savings require McKesson repricing and contract mileage validation.</div>
+        <label for="maxSavingsMode">Scenario Mode</label>
+        <select id="maxSavingsMode"><option>Current Baseline</option><option>Conservative Optimization</option><option>Balanced Optimization</option><option selected>Max Savings Optimization</option></select>
+        <label for="maxSavingsMapMode" style="margin-top:8px">Map Display</label>
+        <select id="maxSavingsMapMode"><option value="both">Current + Proposed</option><option value="current">Current Routes</option><option value="proposed">Proposed Routes</option></select>
+        <div class="button-row"><button class="action primary" id="loadMaxSavingsScenario" type="button">Run Scenario</button><button class="action" id="previewScenarioBrief" type="button">Preview Scenario Brief</button><button class="action" id="exportScenarioPdf" type="button">Export Scenario PDF</button></div>
+        <div class="legend"><h2>Scenario Legend</h2><div class="legend-item"><span class="dot" style="background:#64748b"></span> Current route</div><div class="legend-item"><span class="dot" style="background:#2563eb"></span> Proposed route</div><div class="legend-item"><span class="dot" style="background:#d97706"></span> Moved center / PLC reassignment</div><div class="legend-item"><span class="dot" style="background:#7c3aed"></span> Frequency changed W to BW</div><div class="legend-item"><span class="dot" style="background:#16a34a"></span> New route</div><div class="legend-item"><span class="dot" style="background:#dc2626"></span> Removed route / needs validation</div></div>
+        <div id="maxSavingsOutput" class="ai-output"><div class="ai-title">Run a scenario to view scenario savings, route changes, validation warnings, and proposed route map lines.</div></div>
+      </div>
+    </div>
+
+    <div id="rfqReadinessPanel" class="view-panel hidden">
+      <div class="scenario-card">
+        <h2>AI RFQ Data Readiness</h2>
+        <div class="sub" style="margin-bottom:8px">Identify available RFQ data, missing fields, priorities, owners, and why each field matters for sourcing and route optimization.</div>
+        <div class="button-row"><button class="action primary" id="loadRfqReadiness" type="button">Refresh RFQ Readiness</button><button class="action" id="exportRfqRequirements" type="button">Export RFQ Data Requirements CSV</button><button class="action" id="exportRfqGaps" type="button">Export Missing Data Gaps CSV</button><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
+        <div class="button-row"><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
+        <div id="rfqReadinessOutput" class="ai-output"><div class="ai-title">RFQ readiness results will show here.</div></div>
+      </div>
+    </div>
+
+
     <div class="legend">
       <h2>PLC Color Legend</h2>
       <div class="legend-item"><span class="dot" style="background:#2563eb"></span> Dallas PLC</div>
@@ -449,7 +476,7 @@ body.optimization-active aside{padding-bottom:34px;}
   <main>
     <div class="topbar">
       <div>
-        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button></div>
+        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button><button class="tab-btn" id="tabMaxSavings" type="button">Max Savings AI Optimizer</button><button class="tab-btn" id="tabRfqReadiness" type="button">AI RFQ Data Readiness</button></div>
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
@@ -2092,7 +2119,7 @@ async function loadActualOptimizationRoutes(){
   refreshOptimization();
 }
 
-function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : activeView === 'aiAssistant' ? refreshAiAssistant() : refreshPlc(); }
+function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : activeView === 'aiAssistant' ? refreshAiAssistant() : activeView === 'maxSavings' ? refreshMaxSavingsView() : activeView === 'rfqReadiness' ? refreshRfqReadinessView() : refreshPlc(); }
 function onModeChange(){
   const current=$('plcFilter').value;
   populateFilters();
@@ -2106,11 +2133,15 @@ function setView(view){
   if($('tabPlayground')) $('tabPlayground').classList.toggle('active', view==='playground');
   if($('tabOptimization')) $('tabOptimization').classList.toggle('active', view==='optimization');
   if($('tabAiAssistant')) $('tabAiAssistant').classList.toggle('active', view==='aiAssistant');
+  if($('tabMaxSavings')) $('tabMaxSavings').classList.toggle('active', view==='maxSavings');
+  if($('tabRfqReadiness')) $('tabRfqReadiness').classList.toggle('active', view==='rfqReadiness');
   $('plcPanel').classList.toggle('hidden', view!=='plc');
   $('routePanel').classList.toggle('hidden', view!=='schedule');
   if($('playgroundPanel')) $('playgroundPanel').classList.toggle('hidden', view!=='playground');
   if($('optimizationPanel')) $('optimizationPanel').classList.toggle('hidden', view!=='optimization');
   if($('aiAssistantPanel')) $('aiAssistantPanel').classList.toggle('hidden', view!=='aiAssistant');
+  if($('maxSavingsPanel')) $('maxSavingsPanel').classList.toggle('hidden', view!=='maxSavings');
+  if($('rfqReadinessPanel')) $('rfqReadinessPanel').classList.toggle('hidden', view!=='rfqReadiness');
   refresh();
 }
 populateFilters();
@@ -2130,6 +2161,17 @@ $('tabSchedule').addEventListener('click', ()=>setView('schedule'));
 if($('tabPlayground')) $('tabPlayground').addEventListener('click', ()=>setView('playground'));
 if($('tabOptimization')) $('tabOptimization').addEventListener('click', ()=>setView('optimization'));
 if($('tabAiAssistant')) $('tabAiAssistant').addEventListener('click', ()=>setView('aiAssistant'));
+if($('tabMaxSavings')) $('tabMaxSavings').addEventListener('click', ()=>setView('maxSavings'));
+if($('tabRfqReadiness')) $('tabRfqReadiness').addEventListener('click', ()=>setView('rfqReadiness'));
+if($('loadMaxSavingsScenario')) $('loadMaxSavingsScenario').addEventListener('click', loadMaxSavingsScenario);
+if($('maxSavingsMapMode')) $('maxSavingsMapMode').addEventListener('change', drawMaxSavingsScenarioMap);
+if($('previewScenarioBrief')) $('previewScenarioBrief').addEventListener('click', openScenarioBrief);
+if($('exportScenarioPdf')) $('exportScenarioPdf').addEventListener('click', openScenarioBrief);
+if($('loadRfqReadiness')) $('loadRfqReadiness').addEventListener('click', loadRfqReadiness);
+if($('exportRfqRequirements')) $('exportRfqRequirements').addEventListener('click', ()=>exportCsvFile('rfq_data_requirements.csv', lastRfqReadiness?.requirements||[]));
+if($('exportRfqGaps')) $('exportRfqGaps').addEventListener('click', ()=>exportCsvFile('rfq_missing_data_gaps.csv', lastRfqReadiness?.criticalGaps||[]));
+if($('exportMckessonAsk')) $('exportMckessonAsk').addEventListener('click', ()=>exportCsvFile('mckesson_data_request.csv', lastRfqReadiness?.mckessonAskList||[]));
+if($('exportCslAsk')) $('exportCslAsk').addEventListener('click', ()=>exportCsvFile('csl_internal_data_request.csv', lastRfqReadiness?.cslInternalAskList||[]));
 ['scenarioPricingMethod','scenarioFuelRate','scenarioLinehaulRate','scenarioWeightTier','scenarioIncludeReturn','scenarioTollPreference','scenarioShowLines','scenarioShowCurrentLines','scenarioOpenOnly'].forEach(id => { if($(id)) $(id).addEventListener('change', refreshPlayground); });
 if($('scenarioOpenOnly')) $('scenarioOpenOnly').addEventListener('change', populateScenarioControls);
 if($('scenarioAddUpdate')) $('scenarioAddUpdate').addEventListener('click', addScenarioAssignments);
@@ -3697,6 +3739,52 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
 
 
 
+
+let lastMaxSavingsScenario=null;
+let lastRfqReadiness=null;
+function moneyScenario(v){ return Number(v||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}); }
+function numberScenario(v){ return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
+function refreshMaxSavingsView(){
+  $('mapTitle').textContent='Max Savings AI Optimizer'; $('visiblePill').textContent='Scenario planning';
+  if(!lastMaxSavingsScenario) loadMaxSavingsScenario(); else drawMaxSavingsScenarioMap();
+}
+function scenarioTableRows(items, cols){ return (items||[]).map(item=>`<tr>${cols.map(c=>`<td>${esc2(typeof c==='function'?c(item):item[c])}</td>`).join('')}</tr>`).join(''); }
+async function loadMaxSavingsScenario(){
+  const out=$('maxSavingsOutput'); if(out) out.innerHTML='<div class="ai-title">Building max savings scenario...</div>';
+  const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization';
+  const res=await fetch(`/api/max-savings-scenario?mode=${encodeURIComponent(mode)}`); const json=await res.json();
+  lastMaxSavingsScenario=json.selected; renderMaxSavingsScenario(json.selected); drawMaxSavingsScenarioMap();
+}
+function renderMaxSavingsScenario(s){
+  const out=$('maxSavingsOutput'); if(!out||!s) return;
+  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Proposed miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+}
+function drawMaxSavingsScenarioMap(){
+  if(!lastMaxSavingsScenario||!lineLayer) return;
+  const mode=$('maxSavingsMapMode')?.value || 'both';
+  lineLayer.clearLayers();
+  const drawProposed=mode==='both'||mode==='proposed';
+  const drawCurrent=mode==='both'||mode==='current';
+  if(drawCurrent) refreshOptimization();
+  if(drawProposed){
+    for(const route of lastMaxSavingsScenario.proposedStopSequences||[]){
+      const pts=[]; for(const stop of route.stops||[]){ const rec=records.find(r=>String(r.centerNumber||r.id)===String(stop.centerNumber)); if(rec&&rec.hasCoords) pts.push([rec.lat,rec.lng]); }
+      const plc=plcCoords[route.proposedPLC]; if(plc) pts.push([plc.lat,plc.lng]);
+      if(pts.length>1) lineLayer.addLayer(L.polyline(pts,{color:routeColor(route.routeName),weight:4,opacity:.75,dashArray:'5 5'}).bindPopup(`<b>Proposed route</b><br>${esc2(route.routeName)} → ${esc2(route.proposedPLC)}<br>Scenario savings require validation.`));
+    }
+  }
+}
+function openScenarioBrief(){ const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization'; window.open(`/api/scenario-pdf?mode=${encodeURIComponent(mode)}`,'_blank'); }
+function refreshRfqReadinessView(){ $('mapTitle').textContent='AI RFQ Data Readiness'; $('visiblePill').textContent='RFQ readiness'; if(!lastRfqReadiness) loadRfqReadiness(); }
+async function loadRfqReadiness(){
+  const out=$('rfqReadinessOutput'); if(out) out.innerHTML='<div class="ai-title">Loading RFQ readiness...</div>';
+  const res=await fetch('/api/rfq-readiness'); const rfq=await res.json(); lastRfqReadiness=rfq; renderRfqReadiness(rfq);
+}
+function renderRfqReadiness(r){
+  const out=$('rfqReadinessOutput'); if(!out||!r) return;
+  out.innerHTML=`<div class="ai-title">RFQ Readiness Score: ${r.readiness.score}/100 — ${esc2(r.readiness.band)}</div><h3>Current Data Inventory</h3><div class="scenario-kpis"><div class="scenario-kpi">Route groups<b>${r.inventory.routeGroupCount}</b></div><div class="scenario-kpi">Week A stops<b>${r.inventory.weekAStops}</b></div><div class="scenario-kpi">Week B stops<b>${r.inventory.weekBStops}</b></div><div class="scenario-kpi">Invoice rows<b>${r.inventory.invoiceRows}</b></div></div><h3>Missing Critical Data</h3><table><thead><tr><th>Missing Data Point</th><th>Why It Matters</th><th>Impact on RFQ</th><th>Owner</th><th>Priority</th><th>Suggested Ask</th></tr></thead><tbody>${scenarioTableRows(r.criticalGaps.slice(0,25), ['fieldName','businessReason','riskIfMissing','owner','priority',x=>`Please provide ${x.fieldName}`])}</tbody></table><h3>Data Requirements by Category</h3><table><thead><tr><th>Category</th><th>Field</th><th>Priority</th><th>Status</th><th>Current Source</th><th>Owner / Request From</th><th>Why Needed</th><th>KPI Supported</th><th>Recommended Format</th><th>Risk if Missing</th></tr></thead><tbody>${scenarioTableRows(r.requirements.slice(0,120), ['category','fieldName','priority','currentStatus','currentSource','owner','businessReason','kpiEnabled','recommendedFormat','riskIfMissing'])}</tbody></table><h3>McKesson / Carrier Ask List</h3><table><thead><tr><th>Ask #</th><th>Recipient</th><th>Request</th><th>Reason</th><th>Format Needed</th><th>Example Field</th><th>Priority</th></tr></thead><tbody>${scenarioTableRows(r.mckessonAskList, ['askNumber','recipient','request','reason','formatNeeded','exampleField','priority'])}</tbody></table><h3>CSL Internal Ask List</h3><table><thead><tr><th>Ask #</th><th>Recipient</th><th>Request</th><th>Reason</th><th>Format Needed</th><th>Example Field</th><th>Priority</th></tr></thead><tbody>${scenarioTableRows(r.cslInternalAskList, ['askNumber','recipient','request','reason','formatNeeded','exampleField','priority'])}</tbody></table>`;
+}
+function exportCsvFile(name, rows){ if(!rows||!rows.length) return alert('No rows to export.'); const keys=Object.keys(rows[0]); const csv=[keys.join(','),...rows.map(r=>keys.map(k=>`"${String(r[k]??'').replaceAll('"','""')}"`).join(','))].join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
 function refreshAiAssistant(){
   $('mapTitle').textContent='AI Assistant: grounded CSL Plasma transportation Q&A';
   $('visiblePill').textContent='AI Assistant';

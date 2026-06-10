@@ -1,6 +1,8 @@
 import { getDataSummary } from './dataSummary.js';
 import { getInvoiceAudit } from './invoiceAuditMath.js';
 import { getFuelSurchargeAudit } from './fuelSurchargeMath.js';
+import { buildMaxSavingsScenario } from './aiOptimizer.js';
+import { buildRfqDataReadinessSummary } from './rfqDataReadiness.js';
 import {
   ASSUMPTIONS,
   generateDeterministicCandidates,
@@ -54,7 +56,9 @@ function detectTerms(question = '') {
     asksExecutive: /summarize|summary|bruno|viviana|top 5|present/.test(q),
     asksCompare: /compare| vs |versus/.test(q),
     asksShipmentVolume: /shipment|shipments|pickup count|pickup stops|stops per week|routes per week|shipments weekly|weekly shipments|average shipments/.test(q),
-    asksDataInventory: /what data do we have|what data is available|available data|data do we have|data available/.test(q)
+    asksDataInventory: /what data do we have|what data is available|available data|data do we have|data available/.test(q),
+    asksMaxSavings: /max savings|proposed savings|scenario savings|centers should move plc|routes should be split|new routes|scenario brief|export.*pdf/.test(q),
+    asksRfqReadiness: /rfq|data readiness|ask mckesson|ask csl|prove savings|data needed|missing data|carrier data|are we rfq ready/.test(q)
   };
 }
 
@@ -388,6 +392,35 @@ export function buildAiChatContext({ question = '', routeName = '', mode = '' } 
     context.scheduleActivity ||= scheduleActivitySummary();
     context.dataUsed.push(DATA_USED.ROUTE_KPIS, DATA_USED.CENTER_DATA, DATA_USED.INVOICE, DATA_USED.FUEL, DATA_USED.OPTIMIZATION, DATA_USED.AI_PICKUP, DATA_USED.DATA_QUALITY, DATA_USED.CONTRACT);
   }
+  if (terms.asksMaxSavings) {
+    const maxScenario = buildMaxSavingsScenario('Max Savings Optimization');
+    context.maxSavingsScenario = {
+      scenarioName: maxScenario.scenarioName,
+      weeklyScenarioSavings: maxScenario.weeklyScenarioSavings,
+      annualScenarioSavings: maxScenario.annualScenarioSavings,
+      routeCountCurrent: maxScenario.routeCountCurrent,
+      routeCountProposed: maxScenario.routeCountProposed,
+      centersReassignedPLC: maxScenario.centersReassignedPLC.slice(0, 25),
+      centersChangedFrequency: maxScenario.centersChangedFrequency.slice(0, 25),
+      routesCreated: maxScenario.routesCreated.slice(0, 25),
+      routesRemoved: maxScenario.routesRemoved.slice(0, 25),
+      validationWarnings: maxScenario.validationWarnings,
+      risksAndTradeoffs: maxScenario.risksAndTradeoffs,
+      confidenceScore: maxScenario.confidenceScore
+    };
+    context.dataUsed.push(DATA_USED.OPTIMIZATION, DATA_USED.AI_PICKUP);
+  }
+  if (terms.asksRfqReadiness) {
+    const rfq = buildRfqDataReadinessSummary();
+    context.rfqReadiness = {
+      readiness: rfq.readiness,
+      criticalGaps: rfq.criticalGaps.slice(0, 15),
+      mckessonAskList: rfq.mckessonAskList.slice(0, 10),
+      cslInternalAskList: rfq.cslInternalAskList.slice(0, 10),
+      dataQualityWarnings: rfq.dataQualityWarnings.slice(0, 10)
+    };
+    context.dataUsed.push(DATA_USED.DATA_QUALITY, DATA_USED.CONTRACT);
+  }
   if (terms.asksInvoice || terms.asksExecutive || terms.asksDataQuality) {
     context.invoiceAudit = invoiceSummary();
     context.dataUsed.push(DATA_USED.INVOICE);
@@ -415,7 +448,28 @@ export function deterministicAnswer(context) {
   const q = (context.question || '').toLowerCase();
   const lines = [];
 
-  if (context.scheduleActivity && /shipment|pickup count|pickup stops|stops per week|routes per week|shipments weekly|weekly shipments|average shipments/.test(q)) {
+  if (context.maxSavingsScenario && /max savings|proposed savings|scenario savings|centers should move plc|routes should be split|new routes|scenario brief|export.*pdf/.test(q)) {
+    const s = context.maxSavingsScenario;
+    lines.push(`${s.scenarioName} shows ${money(s.weeklyScenarioSavings)} weekly scenario savings and ${money(s.annualScenarioSavings)} annual scenario savings.`);
+    lines.push(`Route count changes from ${s.routeCountCurrent} current routes to ${s.routeCountProposed} proposed routes.`);
+    lines.push(`PLC reassignments listed in the scenario: ${s.centersReassignedPLC.length}. Frequency changes listed: ${s.centersChangedFrequency.length}.`);
+    lines.push(`Routes created include: ${s.routesCreated.slice(0, 8).join(', ') || 'None'}. Routes removed include: ${s.routesRemoved.slice(0, 8).join(', ') || 'None'}.`);
+    if (/pdf|brief|export/.test(q)) lines.push('Use the Preview Scenario Brief or Export Scenario PDF button in the Max Savings AI Optimizer tab. The export is a printable HTML report to avoid adding heavy PDF dependencies.');
+    lines.push('Scenario savings require McKesson repricing and contract mileage validation before invoice impact is validated.');
+  } else if (context.rfqReadiness && /rfq|data readiness|ask mckesson|ask csl|prove savings|data needed|missing data|carrier data|are we rfq ready/.test(q)) {
+    const r = context.rfqReadiness;
+    lines.push(`RFQ readiness score: ${r.readiness.score}/100 — ${r.readiness.band}.`);
+    lines.push('Top missing or validation-needed data:');
+    for (const gap of r.criticalGaps.slice(0, 8)) lines.push(`- ${gap.fieldName} (${gap.priority}) — ${gap.riskIfMissing}`);
+    if (/mckesson/i.test(q)) {
+      lines.push('Sample McKesson / carrier asks:');
+      for (const ask of r.mckessonAskList.slice(0, 5)) lines.push(`- ${ask.request} Format: ${ask.formatNeeded}.`);
+    }
+    if (/csl|internal/i.test(q)) {
+      lines.push('Sample CSL internal asks:');
+      for (const ask of r.cslInternalAskList.slice(0, 5)) lines.push(`- ${ask.request} Format: ${ask.formatNeeded}.`);
+    }
+  } else if (context.scheduleActivity && /shipment|pickup count|pickup stops|stops per week|routes per week|shipments weekly|weekly shipments|average shipments/.test(q)) {
     const s = context.scheduleActivity;
     lines.push(`True shipment count per week is not directly available from the current app data unless each BOL row represents one shipment and the billing or pickup date can be grouped by week.`);
     lines.push(`Closest available proxies:`);
