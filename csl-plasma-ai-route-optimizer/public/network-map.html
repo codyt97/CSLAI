@@ -132,6 +132,23 @@
     .ai-output .ai-title{font-weight:900;color:#0f172a;margin:0 0 6px}
     textarea.ai-question{width:100%;min-height:68px;border:1px solid #bbf7d0;border-radius:10px;padding:9px;font-family:inherit;font-size:12px;resize:vertical;background:#fff;color:#0f172a}
 
+    .ai-assistant-card{border:1px solid #bfdbfe;background:#eff6ff;color:#172554;border-radius:14px;padding:12px;margin:12px 0;font-size:12px;line-height:1.42}
+    .ai-assistant-card h2{font-size:15px;margin:0 0 4px;font-weight:900;color:#1e3a8a}
+    .ai-chat-history{display:grid;gap:10px;max-height:360px;overflow:auto;background:#fff;border:1px solid #dbeafe;border-radius:12px;padding:10px;margin:10px 0;white-space:normal}
+    .ai-chat-msg{border-radius:12px;padding:10px;line-height:1.45;color:#334155;white-space:pre-wrap}
+    .ai-chat-msg.user{background:#0f172a;color:#fff;margin-left:24px}
+    .ai-chat-msg.assistant{background:#f8fafc;border:1px solid #e2e8f0;margin-right:18px}
+    .ai-chat-msg.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+    .ai-chat-input{width:100%;min-height:76px;border:1px solid #bfdbfe;border-radius:10px;padding:9px;font-family:inherit;font-size:12px;resize:vertical;background:#fff;color:#0f172a}
+    .ai-chat-starters{display:grid;grid-template-columns:1fr;gap:6px;margin:10px 0}
+    .ai-chat-starters button{font-size:11px;text-align:left;padding:8px 9px}
+    .chip-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+    .data-chip{border:1px solid #bfdbfe;background:#dbeafe;color:#1e3a8a;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+    .warning-chip{border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800}
+    .source-chip{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}
+    .scenario-card{border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:12px;margin:12px 0;font-size:12px;line-height:1.42}
+    .scenario-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.scenario-kpi{background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:8px}.scenario-kpi b{display:block;font-size:16px;color:#1d4ed8}
+
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
 
@@ -343,7 +360,7 @@ body.optimization-active aside{padding-bottom:34px;}
         <ul>
           <li><b>Current baseline</b> comes from the workbook route, endpoint PLC, miles, linehaul, fuel surcharge, and total weekly cost.</li>
           <li><b>Recommended PLC</b> is calculated from closest PLC distance unless the route is flagged as not serviced by McKesson.</li>
-          <li><b>Fuel savings</b> use the workbook average fuel surcharge percentage and the Excel Rate Table pricing basis.</li>
+          <li><b>Fuel opportunity</b> uses the workbook average fuel surcharge percentage and the Excel Rate Table pricing basis.</li>
           <li><b>Relay validation</b> flags Allentown, Buffalo, and Philly where Base PLC and Actual PLC differ.</li>
         </ul>
       </div>
@@ -351,7 +368,7 @@ body.optimization-active aside{padding-bottom:34px;}
         <div>
           <label for="optObjectiveFilter">Route Optimization Objective</label>
           <select id="optObjectiveFilter">
-            <option value="savings">Max Savings</option>
+            <option value="savings">Max Opportunity</option>
             <option value="miles">Reduce Miles</option>
             <option value="fuel">Reduce Fuel</option>
             <option value="relay">Validate Relay Routes</option>
@@ -399,9 +416,54 @@ body.optimization-active aside{padding-bottom:34px;}
         <label><input type="checkbox" id="optOpenOnly" checked /> Open centers only</label>
         <label><input type="checkbox" id="optRelayOnly" /> Relay / Base ≠ Actual only</label>
         <label><input type="checkbox" id="optShowRecommendedLines" checked /> Show current vs recommended lines</label>
-        <label><input type="checkbox" id="optHideNoSavings" checked /> Hide routes with no estimated savings</label>
+        <label><input type="checkbox" id="optHideNoSavings" checked /> Hide routes with no estimated opportunity</label>
       </div>
     </div>
+
+    <div id="aiAssistantPanel" class="view-panel hidden">
+      <div class="ai-assistant-card">
+        <h2>AI Assistant</h2>
+        <div class="sub" style="margin-bottom:8px">Ask questions about routes, invoices, KPIs, optimization, and audit findings.</div>
+        <div class="notice" id="aiChatSetupWarning" style="display:none"><b>Setup:</b> AI status is being checked.</div>
+        <div class="ai-chat-starters" id="aiChatStarters"></div>
+        <div class="ai-chat-history" id="aiChatHistory">
+          <div class="ai-chat-msg assistant">Ask a question about CSL Plasma transportation data. I will use compact app context and will not claim validated invoice impact.</div>
+        </div>
+        <textarea id="aiChatInput" class="ai-chat-input" placeholder="Example: Explain PHILLY, What does the invoice audit show?, Why are there zero actionable AI regrouping candidates?"></textarea>
+        <div class="button-row">
+          <button class="action primary" id="aiChatSend" type="button">Send</button>
+          <button class="action" id="aiChatClear" type="button">Clear</button>
+          <button class="action" id="aiChatExplainRoute" type="button">Explain Selected Route</button>
+        </div>
+        <div id="aiChatMeta" class="mini-note">Data used and validation warnings appear after each answer.</div>
+      </div>
+    </div>
+
+
+    <div id="maxSavingsPanel" class="view-panel hidden">
+      <div class="scenario-card">
+        <h2>Max Savings AI Optimizer</h2>
+        <div class="sub" style="margin-bottom:8px">Build and inspect current baseline, conservative, balanced, and max savings optimization scenarios. Scenario savings require McKesson repricing and contract mileage validation.</div>
+        <label for="maxSavingsMode">Scenario Mode</label>
+        <select id="maxSavingsMode"><option>Current Baseline</option><option>Conservative Optimization</option><option>Balanced Optimization</option><option selected>Max Savings Optimization</option></select>
+        <label for="maxSavingsMapMode" style="margin-top:8px">Map Display</label>
+        <select id="maxSavingsMapMode"><option value="both">Current + Proposed</option><option value="current">Current Routes</option><option value="proposed">Proposed Routes</option></select>
+        <div class="button-row"><button class="action primary" id="loadMaxSavingsScenario" type="button">Run Scenario</button><button class="action" id="previewScenarioBrief" type="button">Preview Scenario Brief</button><button class="action" id="exportScenarioPdf" type="button">Export Scenario PDF</button></div>
+        <div class="legend"><h2>Scenario Legend</h2><div class="legend-item"><span class="dot" style="background:#64748b"></span> Current route</div><div class="legend-item"><span class="dot" style="background:#2563eb"></span> Proposed route</div><div class="legend-item"><span class="dot" style="background:#d97706"></span> Moved center / PLC reassignment</div><div class="legend-item"><span class="dot" style="background:#7c3aed"></span> Frequency changed W to BW</div><div class="legend-item"><span class="dot" style="background:#16a34a"></span> New route</div><div class="legend-item"><span class="dot" style="background:#dc2626"></span> Removed route / needs validation</div></div>
+        <div id="maxSavingsOutput" class="ai-output"><div class="ai-title">Run a scenario to view scenario savings, route changes, validation warnings, and proposed route map lines.</div></div>
+      </div>
+    </div>
+
+    <div id="rfqReadinessPanel" class="view-panel hidden">
+      <div class="scenario-card">
+        <h2>AI RFQ Data Readiness</h2>
+        <div class="sub" style="margin-bottom:8px">Identify available RFQ data, missing fields, priorities, owners, and why each field matters for sourcing and route optimization.</div>
+        <div class="button-row"><button class="action primary" id="loadRfqReadiness" type="button">Refresh RFQ Readiness</button><button class="action" id="exportRfqRequirements" type="button">Export RFQ Data Requirements CSV</button><button class="action" id="exportRfqGaps" type="button">Export Missing Data Gaps CSV</button><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
+        <div class="button-row"><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
+        <div id="rfqReadinessOutput" class="ai-output"><div class="ai-title">RFQ readiness results will show here.</div></div>
+      </div>
+    </div>
+
 
     <div class="legend">
       <h2>PLC Color Legend</h2>
@@ -414,7 +476,7 @@ body.optimization-active aside{padding-bottom:34px;}
   <main>
     <div class="topbar">
       <div>
-        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button></div>
+        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button><button class="tab-btn" id="tabMaxSavings" type="button">Max Savings AI Optimizer</button><button class="tab-btn" id="tabRfqReadiness" type="button">AI RFQ Data Readiness</button></div>
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
@@ -2057,7 +2119,7 @@ async function loadActualOptimizationRoutes(){
   refreshOptimization();
 }
 
-function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : refreshPlc(); }
+function refresh(){ activeView === 'schedule' ? refreshSchedule() : activeView === 'playground' ? refreshPlayground() : activeView === 'optimization' ? refreshOptimization() : activeView === 'aiAssistant' ? refreshAiAssistant() : activeView === 'maxSavings' ? refreshMaxSavingsView() : activeView === 'rfqReadiness' ? refreshRfqReadinessView() : refreshPlc(); }
 function onModeChange(){
   const current=$('plcFilter').value;
   populateFilters();
@@ -2070,10 +2132,16 @@ function setView(view){
   $('tabSchedule').classList.toggle('active', view==='schedule');
   if($('tabPlayground')) $('tabPlayground').classList.toggle('active', view==='playground');
   if($('tabOptimization')) $('tabOptimization').classList.toggle('active', view==='optimization');
+  if($('tabAiAssistant')) $('tabAiAssistant').classList.toggle('active', view==='aiAssistant');
+  if($('tabMaxSavings')) $('tabMaxSavings').classList.toggle('active', view==='maxSavings');
+  if($('tabRfqReadiness')) $('tabRfqReadiness').classList.toggle('active', view==='rfqReadiness');
   $('plcPanel').classList.toggle('hidden', view!=='plc');
   $('routePanel').classList.toggle('hidden', view!=='schedule');
   if($('playgroundPanel')) $('playgroundPanel').classList.toggle('hidden', view!=='playground');
   if($('optimizationPanel')) $('optimizationPanel').classList.toggle('hidden', view!=='optimization');
+  if($('aiAssistantPanel')) $('aiAssistantPanel').classList.toggle('hidden', view!=='aiAssistant');
+  if($('maxSavingsPanel')) $('maxSavingsPanel').classList.toggle('hidden', view!=='maxSavings');
+  if($('rfqReadinessPanel')) $('rfqReadinessPanel').classList.toggle('hidden', view!=='rfqReadiness');
   refresh();
 }
 populateFilters();
@@ -2092,6 +2160,18 @@ $('tabPlc').addEventListener('click', ()=>setView('plc'));
 $('tabSchedule').addEventListener('click', ()=>setView('schedule'));
 if($('tabPlayground')) $('tabPlayground').addEventListener('click', ()=>setView('playground'));
 if($('tabOptimization')) $('tabOptimization').addEventListener('click', ()=>setView('optimization'));
+if($('tabAiAssistant')) $('tabAiAssistant').addEventListener('click', ()=>setView('aiAssistant'));
+if($('tabMaxSavings')) $('tabMaxSavings').addEventListener('click', ()=>setView('maxSavings'));
+if($('tabRfqReadiness')) $('tabRfqReadiness').addEventListener('click', ()=>setView('rfqReadiness'));
+if($('loadMaxSavingsScenario')) $('loadMaxSavingsScenario').addEventListener('click', loadMaxSavingsScenario);
+if($('maxSavingsMapMode')) $('maxSavingsMapMode').addEventListener('change', drawMaxSavingsScenarioMap);
+if($('previewScenarioBrief')) $('previewScenarioBrief').addEventListener('click', openScenarioBrief);
+if($('exportScenarioPdf')) $('exportScenarioPdf').addEventListener('click', openScenarioBrief);
+if($('loadRfqReadiness')) $('loadRfqReadiness').addEventListener('click', loadRfqReadiness);
+if($('exportRfqRequirements')) $('exportRfqRequirements').addEventListener('click', ()=>exportCsvFile('rfq_data_requirements.csv', lastRfqReadiness?.requirements||[]));
+if($('exportRfqGaps')) $('exportRfqGaps').addEventListener('click', ()=>exportCsvFile('rfq_missing_data_gaps.csv', lastRfqReadiness?.criticalGaps||[]));
+if($('exportMckessonAsk')) $('exportMckessonAsk').addEventListener('click', ()=>exportCsvFile('mckesson_data_request.csv', lastRfqReadiness?.mckessonAskList||[]));
+if($('exportCslAsk')) $('exportCslAsk').addEventListener('click', ()=>exportCsvFile('csl_internal_data_request.csv', lastRfqReadiness?.cslInternalAskList||[]));
 ['scenarioPricingMethod','scenarioFuelRate','scenarioLinehaulRate','scenarioWeightTier','scenarioIncludeReturn','scenarioTollPreference','scenarioShowLines','scenarioShowCurrentLines','scenarioOpenOnly'].forEach(id => { if($(id)) $(id).addEventListener('change', refreshPlayground); });
 if($('scenarioOpenOnly')) $('scenarioOpenOnly').addEventListener('change', populateScenarioControls);
 if($('scenarioAddUpdate')) $('scenarioAddUpdate').addEventListener('click', addScenarioAssignments);
@@ -2303,7 +2383,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     </tr></thead>`;
     let body='';
     if(!rows.length){
-      body='<tbody><tr><td colspan="22">No route groups match the current filters. Try unchecking Hide routes with no estimated savings or click Reset Filters.</td></tr></tbody>';
+      body='<tbody><tr><td colspan="22">No route groups match the current filters. Try unchecking Hide routes with no estimated opportunity or click Reset Filters.</td></tr></tbody>';
       table.innerHTML = header + body; return;
     }
     for(const r of rows){
@@ -3007,6 +3087,9 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
   }
   function cloneGroup(g, centers=g.centers){ return calculateRouteGroupKpis({groupId:g.groupId, routeName:g.routeName, weekType:g.weekType, plc:g.plc, centers:centers.slice()}); }
   function buildProposedRouteGroups(routeGroups, options={}){
+    return applyScenarioMoves(routeGroups, options);
+  }
+  function applyScenarioMoves(routeGroups, options={}){
     const map=new Map((routeGroups||[]).map(g=>[g.groupId, cloneGroup(g)]));
     if(options.replaceGroups) for(const g of options.replaceGroups) map.set(g.groupId, calculateRouteGroupKpis(g));
     if(options.removeGroupIds) for(const id of options.removeGroupIds) map.delete(id);
@@ -3020,6 +3103,60 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const before=new Map(); currentGroups.forEach(g=>g.centers.forEach(c=>before.set(c.id,g.groupId)));
     const moved=[]; proposedGroups.forEach(g=>g.centers.forEach(c=>{ if(before.get(c.id) && before.get(c.id)!==g.groupId) moved.push(c.id); }));
     return moved;
+  }
+  function scenarioCenterCounts(groups){
+    const ids=[]; (groups||[]).forEach(g=>(g.centers||[]).forEach(c=>ids.push(c.id)));
+    const uniqueIds=new Set(ids);
+    return {assigned:ids.length, unique:uniqueIds.size, duplicateCount:ids.length-uniqueIds.size, ids:uniqueIds};
+  }
+  function centersMovedDetailed(currentGroups, proposedGroups){
+    const before=new Map(); currentGroups.forEach(g=>g.centers.forEach(c=>before.set(c.id,{group:g, center:c})));
+    const details=[];
+    proposedGroups.forEach(g=>g.centers.forEach(c=>{
+      const prior=before.get(c.id);
+      if(prior && prior.group.groupId!==g.groupId){
+        details.push({center:c, fromGroup:prior.group, toGroup:g, reason:`Moved from ${prior.group.routeName} to ${g.routeName} to test a lower-cost compatible pickup grouping.`, palletImpact:c.weeklyPallets, mileageImpact:(Number(g.proposedScenarioMiles)||0)-(Number(prior.group.proposedScenarioMiles)||0)});
+      }
+    }));
+    return details;
+  }
+  function scenarioGroupExtremes(groups){
+    const vals=(groups||[]).map(g=>Number(g.weeklyPallets)||0);
+    return vals.length ? Math.max(...vals) : 0;
+  }
+  function validateScenarioFeasibility(scenario){
+    const currentCounts=scenarioCenterCounts(scenario.currentGroups);
+    const proposedCounts=scenarioCenterCounts(scenario.proposedGroups);
+    const failed=[];
+    const warnings=[];
+    if(proposedCounts.assigned!==currentCounts.assigned || proposedCounts.unique!==currentCounts.unique) failed.push('Every affected open/scheduled center must remain assigned exactly once.');
+    if(proposedCounts.duplicateCount>0) failed.push('Duplicate center assignment detected.');
+    if((Number(scenario.weeklyOpportunity)||0) <= 0) failed.push('Weekly opportunity is not positive; keep current route grouping.');
+    if((scenario.proposedGroups||[]).some(g=>g.weeklyPallets>COLLECTION_TRAILER.planningPalletThreshold)) warnings.push('Needs Capacity Review: proposed group exceeds 24-pallet 48 ft reefer capacity.');
+    if((scenario.proposedGroups||[]).some(g=>(Number(g.proposedScenarioMiles)||0) / ASSUMED_AVG_MPH > DRIVER_DAILY_LIMIT_HOURS)) warnings.push('Needs Driver-Time Validation: proposed drive time exceeds 11 hours.');
+    if((scenario.currentGroups||[]).concat(scenario.proposedGroups||[]).some(g=>g.mixedPLCFlag || g.relayFlag)) warnings.push('Needs McKesson Validation / Low confidence: mixed PLC / relay route.');
+    const missing=(scenario.proposedGroups||[]).flatMap(g=>g.validationWarnings||[]).filter(w=>/Missing/i.test(w));
+    if(missing.length) warnings.push(...uniqueSorted(missing));
+    let feasibilityStatus='Feasible';
+    if(failed.length) feasibilityStatus='Infeasible';
+    else if(warnings.some(w=>/Capacity Review/i.test(w))) feasibilityStatus='Needs Capacity Review';
+    else if(warnings.some(w=>/Driver-Time/i.test(w))) feasibilityStatus='Needs Driver-Time Validation';
+    else if(warnings.some(w=>/McKesson/i.test(w))) feasibilityStatus='Needs McKesson Validation';
+    else if(warnings.length) feasibilityStatus='Needs Validation';
+    return {feasibilityStatus, failedConstraints:failed, validationWarnings:uniqueSorted(warnings)};
+  }
+  function classifyScenarioRecommendation(scenario){
+    const validation=validateScenarioFeasibility(scenario);
+    const weekly=Number(scenario.weeklyOpportunity)||0;
+    let bucket='Actionable Candidates';
+    let recommendationStrength='Strong';
+    if(weekly<=0 || validation.feasibilityStatus==='Infeasible') bucket='Keep Current / Infeasible';
+    else if(validation.feasibilityStatus!=='Feasible') bucket='Needs Validation / Exploratory Scenarios';
+    if(bucket==='Keep Current / Infeasible') recommendationStrength=weekly>0?'Infeasible':'Keep Current';
+    else if(bucket==='Needs Validation / Exploratory Scenarios') recommendationStrength=weekly>500?'Exploratory - High Upside':'Exploratory';
+    else if(weekly<250) recommendationStrength='Moderate';
+    const confidence = bucket==='Actionable Candidates' ? scenario.confidence : (validation.feasibilityStatus==='Needs McKesson Validation' ? 'Low' : scenario.confidence);
+    return {...validation, bucket, recommendationStrength, confidence};
   }
   function scoreRegroupingScenario(currentGroups, proposedGroups){
     const currentWeeklyCost=scenarioCost(currentGroups);
@@ -3041,13 +3178,24 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(proposedGroups.some(g=>g.plc!==mostCommonValue(g.centers.map(c=>c.currentPLC)))) confidenceScore-=10;
     confidenceScore=Math.max(10, Math.min(95, confidenceScore));
     const validationRisk=warnings.join('; ') || 'Requires McKesson repricing and contract mileage validation';
-    const totalScore=weeklyOpportunity + (milesOpportunity*0.2) + ((proposedUtil-currentUtil)*1000) - (disruptionScore*450) - warnings.length*300 + confidenceScore*20;
+    const totalScore=(weeklyOpportunity>0?weeklyOpportunity:-100000) + (milesOpportunity*0.2) + ((proposedUtil-currentUtil)*1000) - (disruptionScore*450) - warnings.length*300 + confidenceScore*20;
     return {weeklyOpportunity, annualOpportunity, milesOpportunity, palletUtilizationImprovement:(proposedUtil-currentUtil)*100, routeCountChange, disruptionScore, confidenceScore, validationRisk, totalScore};
   }
   function confidenceLabel(score){ return score>=75?'High':score>=45?'Medium':'Low'; }
   function makeScenario(type, currentGroups, proposedGroups, details={}){
     const score=scoreRegroupingScenario(currentGroups, proposedGroups);
-    return {id:`ai-pickup-${Math.random().toString(36).slice(2)}`, recommendationType:type, currentGroups, proposedGroups, ...score, confidence:confidenceLabel(score.confidenceScore), ...details};
+    const scenario={id:`ai-pickup-${Math.random().toString(36).slice(2)}`, recommendationType:type, currentGroups, proposedGroups, ...score, confidence:confidenceLabel(score.confidenceScore), ...details};
+    const classification=classifyScenarioRecommendation(scenario);
+    return {...scenario, ...classification, validationRisk:classification.validationWarnings.join('; ') || score.validationRisk};
+  }
+  function evaluateCenterMove(center, source, target){
+    if(!center || !source || !target) return null;
+    const sourceCenters=source.centers.filter(c=>c.id!==center.id);
+    if(!sourceCenters.length) return null;
+    if(!compatibleGroupWithCenter(center,target)) return null;
+    const newSource=cloneGroup(source, sourceCenters);
+    const newTarget=cloneGroup(target, [...target.centers, center]);
+    return makeScenario('Move Center to Nearby Route', [source,target], [newSource,newTarget], {centersMoved:[center], movedDetails:[{center, fromGroup:source, toGroup:target, reason:`Move ${center.centerName} from ${source.routeName} to nearby compatible route ${target.routeName}.`, palletImpact:center.weeklyPallets, mileageImpact:newTarget.proposedScenarioMiles-target.proposedScenarioMiles}], explanation:`Move ${center.centerName} from ${source.routeName} to nearby compatible route ${target.routeName}. Destination route remains at ${fmt1(newTarget.weeklyPallets)} pallets.`});
   }
   function proposePLCReassignment(routeGroup){
     const current=[routeGroup]; let best=null;
@@ -3058,33 +3206,31 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(!best) return null;
     const type = best.plc===routeGroup.plc ? (best.proposedScenarioMiles < routeGroup.currentSourceMiles*0.95 ? 'Reorder Stops Only' : 'Keep Current Route') : 'Reassign PLC Endpoint';
     if(type==='Keep Current Route') return makeScenario(type, current, [cloneGroup(routeGroup)], {explanation:'Current pickup group remains the best low-disruption grouping under current constraints.', centersMoved:[]});
-    return makeScenario(type, current, [best], {explanation:`${type}: scenario endpoint ${best.plc} lowers modeled route cost/miles. Requires McKesson repricing and contract mileage validation.`, centersMoved:[]});
+    return makeScenario(type, current, [best], {explanation:`${type}: scenario endpoint ${best.plc} lowers modeled route cost/miles. Scenario miles are not confirmed billing miles; validate with McKesson repricing and contract mileage.`, centersMoved:[]});
   }
+  function generateSplitScenarios(routeGroups){ return (routeGroups||[]).map(proposeRouteSplits).filter(Boolean); }
   function proposeRouteSplits(routeGroup){
     if(!(routeGroup.mixedPLCFlag || routeGroup.weeklyPallets>COLLECTION_TRAILER.planningPalletThreshold || routeGroup.stopCount>10)) return null;
     const by={}; routeGroup.centers.forEach(c=>{ const key=routeGroup.mixedPLCFlag ? c.currentPLC : nearestPLCForStop(c.raw).plc; if(!by[key]) by[key]=[]; by[key].push(c); });
     const groups=Object.entries(by).filter(([,cs])=>cs.length).map(([plc,cs],idx)=>calculateRouteGroupKpis({groupId:`${routeGroup.groupId}__split_${idx}`, routeName:`${routeGroup.routeName} Split ${idx+1}`, weekType:routeGroup.weekType, plc, centers:cs}));
     if(groups.length<2) return null;
-    return makeScenario('Split Route into Smaller Groups', [routeGroup], groups, {explanation:'Split by PLC/geographic cluster to reduce mixed endpoint or large-route validation risk. Requires McKesson repricing and pickup-window validation.', centersMoved:[]});
+    return makeScenario('Split Route into Smaller Groups', [routeGroup], groups, {explanation:'Split by PLC/geographic cluster to reduce mixed endpoint or large-route validation risk. Scenario miles are exploratory and require McKesson repricing, pickup-window validation, and contract mileage validation.', centersMoved:[]});
   }
+  function generateCenterMoveScenarios(routeGroups){ return proposeCenterMoves(routeGroups); }
   function proposeCenterMoves(routeGroups){
     const scenarios=[];
     for(const source of routeGroups){
       for(const center of source.centers){
         for(const cand of findNearbyCompatibleRoutes(center, routeGroups).slice(0,2)){
-          const target=cand.group;
-          const sourceCenters=source.centers.filter(c=>c.id!==center.id);
-          if(!sourceCenters.length) continue;
-          const newSource=cloneGroup(source, sourceCenters);
-          const newTarget=cloneGroup(target, [...target.centers, center]);
-          const current=[source,target]; const proposed=[newSource,newTarget];
-          const score=scoreRegroupingScenario(current, proposed);
-          if(score.weeklyOpportunity>50 || cand.distance<100) scenarios.push(makeScenario('Move Center to Nearby Route', current, proposed, {centersMoved:[center], explanation:`Move ${center.centerName} from ${source.routeName} to nearby compatible route ${target.routeName}. Destination route remains at ${fmt1(newTarget.weeklyPallets)} pallets.`}));
+          const scenario=evaluateCenterMove(center, source, cand.group);
+          if(!scenario) continue;
+          if(scenario.weeklyOpportunity>50 || cand.distance<100) scenarios.push(scenario);
         }
       }
     }
     return scenarios;
   }
+  function generateConsolidationScenarios(routeGroups){ return proposeRouteConsolidations(routeGroups); }
   function proposeRouteConsolidations(routeGroups){
     const scenarios=[];
     const under=routeGroups.filter(g=>g.weeklyPallets<COLLECTION_TRAILER.underutilizedThreshold);
@@ -3096,24 +3242,29 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       if(haversineMiles(ca.lat,ca.lng,cb.lat,cb.lng)>300) continue;
       const plc=a.plc===b.plc ? a.plc : mostCommonValue([...a.centers,...b.centers].map(c=>c.currentPLC));
       const merged=calculateRouteGroupKpis({groupId:`${a.groupId}__${b.groupId}__consolidated`, routeName:`${a.routeName} + ${b.routeName}`, weekType:a.weekType, plc, centers:[...a.centers,...b.centers]});
-      scenarios.push(makeScenario('Consolidate Underutilized Routes', [a,b], [merged], {centersMoved:b.centers, explanation:`Consolidate underutilized compatible routes. Combined volume is ${fmt1(merged.weeklyPallets)} pallets, within 24-pallet max.`}));
+      scenarios.push(makeScenario('Consolidate Underutilized Routes', [a,b], [merged], {centersMoved:b.centers, movedDetails:b.centers.map(c=>({center:c, fromGroup:b, toGroup:merged, reason:`Consolidate underutilized compatible route ${b.routeName} into ${a.routeName}.`, palletImpact:c.weeklyPallets, mileageImpact:merged.proposedScenarioMiles-(a.proposedScenarioMiles+b.proposedScenarioMiles)})), explanation:`Consolidate underutilized compatible routes. Combined volume is ${fmt1(merged.weeklyPallets)} pallets, within 24-pallet max.`}));
     }
     return scenarios;
   }
   function buildProposedRouteScenarios(routeGroups){
     const scenarios=[];
-    routeGroups.forEach(g=>{ const plc=proposePLCReassignment(g); if(plc) scenarios.push(plc); const split=proposeRouteSplits(g); if(split) scenarios.push(split); });
-    scenarios.push(...proposeCenterMoves(routeGroups));
-    scenarios.push(...proposeRouteConsolidations(routeGroups));
+    routeGroups.forEach(g=>{ const plc=proposePLCReassignment(g); if(plc) scenarios.push(plc); });
+    scenarios.push(...generateSplitScenarios(routeGroups));
+    scenarios.push(...generateCenterMoveScenarios(routeGroups));
+    scenarios.push(...generateConsolidationScenarios(routeGroups));
     return scenarios;
   }
-  function rankRegroupingScenarios(scenarios){ return (scenarios||[]).sort((a,b)=>b.totalScore-a.totalScore); }
+  function rankRegroupingScenarios(scenarios){
+    const bucketOrder={'Actionable Candidates':0,'Needs Validation / Exploratory Scenarios':1,'Keep Current / Infeasible':2};
+    return (scenarios||[]).map(s=>({...s,...classifyScenarioRecommendation(s)})).sort((a,b)=>(bucketOrder[a.bucket]-bucketOrder[b.bucket]) || b.totalScore-a.totalScore);
+  }
   function explainRegroupingScenario(scenario){
-    return scenario?.explanation || `${scenario?.recommendationType || 'Needs Validation'}. Requires McKesson repricing and contract mileage validation before treating as an operational opportunity.`;
+    const actionText = scenario?.bucket==='Actionable Candidates' ? 'Actionable candidate under current constraints.' : scenario?.bucket==='Needs Validation / Exploratory Scenarios' ? 'Exploratory scenario; validation is required before any operating change.' : 'Not actionable; keep current unless external constraints change.';
+    return scenario?.explanation ? `${actionText} ${scenario.explanation}` : `${actionText} ${scenario?.recommendationType || 'Needs Validation'}. Requires McKesson repricing and contract mileage validation before treating as an operational opportunity.`;
   }
   function currentRouteNamesForScenario(s){ return uniqueSorted((s.currentGroups||[]).map(g=>g.routeName)).join(', '); }
   function proposedGroupNamesForScenario(s){ return uniqueSorted((s.proposedGroups||[]).map(g=>`${g.routeName} → ${g.plc}`)).join(' / '); }
-  function centersMovedForScenario(s){ return uniqueSorted((s.centersMoved||[]).map(c=>c.centerName || c.centerNumber)); }
+  function centersMovedForScenario(s){ return uniqueSorted((s.centersMoved||[]).map(c=>`${c.centerNumber || c.id} ${c.centerName || ''}`.trim())); }
   function scenarioTotals(groups, field){ return (groups||[]).reduce((a,g)=>a+(Number(g[field])||0),0); }
   function renderPickupGroupRecommendations(){
     const panel=$('optimizationPanel'); if(!panel) return;
@@ -3127,29 +3278,41 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const current=buildCurrentRouteGroups();
     let scenarios=rankRegroupingScenarios(buildProposedRouteScenarios(current));
     if(selected) scenarios=scenarios.filter(s=>currentRouteNamesForScenario(s).includes(selected) || proposedGroupNamesForScenario(s).includes(selected));
-    scenarios=scenarios.slice(0,15);
-    window.aiPickupGroupScenarios=scenarios;
-    const rows=scenarios.map((s,idx)=>{
+    const displayScenarios=scenarios.slice(0,30);
+    window.aiPickupGroupScenarios=displayScenarios;
+    const buckets=['Actionable Candidates','Needs Validation / Exploratory Scenarios','Keep Current / Infeasible'];
+    const counts=Object.fromEntries(buckets.map(b=>[b, scenarios.filter(s=>s.bucket===b).length]));
+    function rowHtml(s,idx){
       const currentCost=scenarioTotals(s.currentGroups,'currentWeeklyCost'), proposedCost=scenarioTotals(s.proposedGroups,'proposedWeeklyCost');
-      const cases=scenarioTotals(s.proposedGroups,'weeklyCases'), pallets=scenarioTotals(s.proposedGroups,'weeklyPallets');
-      const currentMiles=scenarioTotals(s.currentGroups,'currentSourceMiles'), proposedMiles=scenarioTotals(s.proposedGroups,'proposedScenarioMiles');
-      const currentPLC=uniqueSorted((s.currentGroups||[]).map(g=>g.plc)).join(', ');
-      const proposedPLC=uniqueSorted((s.proposedGroups||[]).map(g=>g.plc)).join(', ');
-      const trailer=uniqueSorted((s.proposedGroups||[]).map(g=>g.trailerStatus)).join(', ');
+      const movedDetails=(s.movedDetails&&s.movedDetails.length?s.movedDetails:centersMovedDetailed(s.currentGroups,s.proposedGroups));
+      const sourceIds=new Set(movedDetails.map(m=>m.fromGroup.groupId));
+      const destIds=new Set(movedDetails.map(m=>m.toGroup.groupId));
+      const sourceAfter=scenarioGroupExtremes((s.proposedGroups||[]).filter(g=>sourceIds.has(g.groupId))) || (s.proposedGroups?.[0]?.weeklyPallets ?? 0);
+      const destinationAfter=scenarioGroupExtremes((s.proposedGroups||[]).filter(g=>destIds.has(g.groupId))) || (s.proposedGroups?.[s.proposedGroups.length-1]?.weeklyPallets ?? 0);
+      const maxPallets=scenarioGroupExtremes(s.proposedGroups);
       const moved=centersMovedForScenario(s);
-      return `<tr><td>${idx+1}</td><td>${esc2(s.recommendationType)}</td><td>${esc2(currentRouteNamesForScenario(s))}</td><td>${esc2(proposedGroupNamesForScenario(s))}</td><td>${moved.length?esc2(moved.join('; ')):'—'}</td><td>${esc2(currentPLC)}</td><td>${esc2(proposedPLC)}</td><td>${fmt1(cases)}</td><td>${fmt1(pallets)}</td><td>${money2(currentCost)}</td><td>${money2(proposedCost)}</td><td>${money2(s.weeklyOpportunity)}</td><td>${money2(s.annualOpportunity)}</td><td>${fmtMiles(currentMiles)}</td><td>${fmtMiles(proposedMiles)}</td><td>${esc2(trailer)}</td><td>${esc2(s.confidence)}</td><td>${esc2(s.validationRisk)}</td><td><button class="action" type="button" onclick="window.showPickupGroupScenarioDetails(${idx})">View Details</button></td></tr>`;
+      return `<tr><td>${idx+1}</td><td>${esc2(s.bucket)}</td><td>${esc2(s.recommendationType)}</td><td>${esc2(currentRouteNamesForScenario(s))}</td><td>${esc2(proposedGroupNamesForScenario(s))}</td><td>${fmt0(moved.length)}</td><td>${moved.length?esc2(moved.join('; ')):'—'}</td><td>${money2(currentCost)}</td><td>${money2(proposedCost)}</td><td>${money2(s.weeklyOpportunity)}</td><td>${money2(s.annualOpportunity)}</td><td>${fmt1(sourceAfter)}</td><td>${fmt1(destinationAfter)}</td><td>${fmt1(maxPallets)}</td><td>${esc2(s.feasibilityStatus)}</td><td>${esc2(s.recommendationStrength)}</td><td>${esc2(s.confidence)}</td><td>${esc2(s.validationRisk || 'Scenario miles are not confirmed billing miles.')}</td><td><button class="action" type="button" onclick="window.showPickupGroupScenarioDetails(${idx})">View Details</button></td></tr>`;
+    }
+    const headers='<tr><th>Rank</th><th>Bucket</th><th>Recommendation Type</th><th>Current Route(s)</th><th>Proposed Group</th><th>Centers Moved Count</th><th>Centers Moved</th><th>Current Weekly Cost</th><th>Proposed Weekly Cost</th><th>Weekly Opportunity</th><th>Annual Opportunity</th><th>Source Group Pallets After Move</th><th>Destination Group Pallets After Move</th><th>Max Proposed Single Group Pallets</th><th>Feasibility Status</th><th>Recommendation Strength</th><th>Confidence</th><th>Validation Warning</th><th>View Details</th></tr>';
+    let rank=0;
+    const sections=buckets.map(bucket=>{
+      const bucketRows=displayScenarios.filter(s=>s.bucket===bucket);
+      const body=bucketRows.map(s=>rowHtml(s,rank++)).join('') || (bucket==='Actionable Candidates' ? '<tr><td colspan="19">No actionable regrouping candidates under current constraints.</td></tr>' : '<tr><td colspan="19">No scenarios in this bucket under current filters.</td></tr>');
+      return `<h3>${esc2(bucket)} (${fmt0(counts[bucket]||0)})</h3><div class="table-wrap"><table class="review-table"><thead>${headers}</thead><tbody>${body}</tbody></table></div>`;
     }).join('');
-    box.innerHTML=`<h2>AI Pickup Group Recommendations</h2><div class="mini-note">Deterministic scenario recommendations. Scenario opportunity only; requires McKesson repricing and contract mileage validation.</div><div class="table-wrap"><table class="review-table"><thead><tr><th>Rank</th><th>Recommendation Type</th><th>Current Route(s)</th><th>Proposed Group</th><th>Centers Moved</th><th>Current PLC</th><th>Proposed PLC</th><th>Weekly Cases</th><th>Weekly Pallets</th><th>Current Weekly Cost</th><th>Proposed Weekly Cost</th><th>Weekly Opportunity</th><th>Annual Opportunity</th><th>Current Source Miles</th><th>Proposed Scenario Miles</th><th>Trailer Status</th><th>Confidence</th><th>Validation Warning</th><th>View Details</th></tr></thead><tbody>${rows || '<tr><td colspan="19">No regrouping scenarios available for current filters.</td></tr>'}</tbody></table></div><div id="aiPickupGroupDetails" class="ai-output"></div>`;
+    box.innerHTML=`<h2>AI Pickup Group Recommendations</h2><div class="mini-note">Deterministic regrouping scenarios. Uses “scenario opportunity” only; scenario miles are not confirmed billing miles and require McKesson repricing, contract mileage validation, pickup-window review, and capacity/driver-time validation.</div>${sections}<div id="aiPickupGroupDetails" class="ai-output"></div>`;
   }
   window.showPickupGroupScenarioDetails=function(index){
     const s=(window.aiPickupGroupScenarios||[])[index]; const box=$('aiPickupGroupDetails'); if(!s||!box) return;
-    const currentCenters=uniqueSorted((s.currentGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerName} (${c.currentRoute})`)));
-    const proposedCenters=uniqueSorted((s.proposedGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerName} → ${g.routeName}`)));
-    const movedIn=centersMovedForScenario(s);
-    const movedOut=movedIn;
-    const currentOrder=(s.currentGroups||[]).map(g=>`${g.routeName}: ${g.centers.map(c=>c.centerName).join(' → ')}`).join('<br>');
-    const proposedOrder=(s.proposedGroups||[]).map(g=>`${g.routeName}: ${g.centers.map(c=>c.centerName).join(' → ')}`).join('<br>');
-    box.innerHTML=`<div class="ai-title">AI Pickup Group Recommendation Details</div><b>Current group centers:</b><br>${esc2(currentCenters.join('; '))}<br><br><b>Proposed group centers:</b><br>${esc2(proposedCenters.join('; '))}<br><br><b>Centers moved in:</b> ${esc2(movedIn.join('; ') || 'None')}<br><b>Centers moved out:</b> ${esc2(movedOut.join('; ') || 'None')}<br><br><b>Current stop order:</b><br>${currentOrder}<br><br><b>Proposed stop order:</b><br>${proposedOrder}<br><br><b>Why recommended:</b> ${esc2(explainRegroupingScenario(s))}<br><br><b>Must validate:</b> Requires McKesson repricing, contract mileage validation, pickup day/time confirmation, driver-hours check, and PLC capacity confirmation. ${esc2(s.validationRisk)}`;
+    const currentCenters=uniqueSorted((s.currentGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerNumber || c.id} ${c.centerName} (${c.currentRoute})`)));
+    const proposedCenters=uniqueSorted((s.proposedGroups||[]).flatMap(g=>g.centers.map(c=>`${c.centerNumber || c.id} ${c.centerName} → ${g.routeName}`)));
+    const moved=(s.movedDetails&&s.movedDetails.length?s.movedDetails:centersMovedDetailed(s.currentGroups,s.proposedGroups));
+    const movedRows=moved.map(m=>`<tr><td>${esc2(m.center.centerNumber || m.center.id)}</td><td>${esc2(m.center.centerName)}</td><td>${esc2(m.fromGroup.routeName)}</td><td>${esc2(m.toGroup.routeName)}</td><td>${esc2(m.reason)}</td><td>${fmt1(m.palletImpact)}</td><td>${fmtMiles(m.mileageImpact)}</td></tr>`).join('') || '<tr><td colspan="7">No centers moved; this is a route-level keep/reprice/resequence scenario.</td></tr>';
+    const failed=(s.failedConstraints||[]).length ? s.failedConstraints.join('; ') : 'None';
+    const validation=(s.validationWarnings||[]).length ? s.validationWarnings.join('; ') : 'McKesson/contract mileage validation still required before operating change.';
+    const currentOrder=(s.currentGroups||[]).map(g=>`${esc2(g.routeName)}: ${esc2(g.centers.map(c=>`${c.centerNumber || c.id} ${c.centerName}`).join(' → '))}`).join('<br>');
+    const proposedOrder=(s.proposedGroups||[]).map(g=>`${esc2(g.routeName)}: ${esc2(g.centers.map(c=>`${c.centerNumber || c.id} ${c.centerName}`).join(' → '))}`).join('<br>');
+    box.innerHTML=`<div class="ai-title">AI Pickup Group Recommendation Details</div><b>Actionability:</b> ${esc2(s.bucket==='Actionable Candidates'?'Actionable under current constraints':'Exploratory or not actionable under current constraints')}<br><b>Why:</b> ${esc2(explainRegroupingScenario(s))}<br><b>Feasibility status:</b> ${esc2(s.feasibilityStatus)}<br><b>Failed constraints:</b> ${esc2(failed)}<br><b>McKesson/contract validation needed:</b> ${esc2(validation)}<br><br><b>Current group centers:</b><br>${esc2(currentCenters.join('; '))}<br><br><b>Proposed group centers:</b><br>${esc2(proposedCenters.join('; '))}<br><br><b>Moved centers</b><div class="table-wrap"><table class="review-table"><thead><tr><th>Center #</th><th>Center Name</th><th>From Route</th><th>To Route</th><th>Reason Moved</th><th>Pallet Impact</th><th>Mileage Impact</th></tr></thead><tbody>${movedRows}</tbody></table></div><br><b>Current stop order:</b><br>${currentOrder}<br><br><b>Proposed stop order:</b><br>${proposedOrder}<br><br><b>Scenario mileage note:</b> Scenario miles are not confirmed billing miles. Use scenario opportunity or operational opportunity only until contract rating or McKesson repricing validates invoice impact.`;
   };
   window.buildCenterNodes=buildCenterNodes;
   window.buildCurrentRouteGroups=buildCurrentRouteGroups;
@@ -3158,6 +3321,14 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
   window.proposeCenterMoves=proposeCenterMoves;
   window.proposeRouteSplits=proposeRouteSplits;
   window.proposeRouteConsolidations=proposeRouteConsolidations;
+  window.evaluateCenterMove=evaluateCenterMove;
+  window.generateCenterMoveScenarios=generateCenterMoveScenarios;
+  window.generateSplitScenarios=generateSplitScenarios;
+  window.generateConsolidationScenarios=generateConsolidationScenarios;
+  window.applyScenarioMoves=applyScenarioMoves;
+  window.validateScenarioFeasibility=validateScenarioFeasibility;
+  window.classifyScenarioRecommendation=classifyScenarioRecommendation;
+  window.renderPickupGroupRecommendations=renderPickupGroupRecommendations;
   window.proposePLCReassignment=proposePLCReassignment;
   window.buildProposedRouteGroups=buildProposedRouteGroups;
   window.scoreRegroupingScenario=scoreRegroupingScenario;
@@ -3567,6 +3738,143 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
 })();
 
 
+
+
+let lastMaxSavingsScenario=null;
+let lastRfqReadiness=null;
+function moneyScenario(v){ return Number(v||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}); }
+function numberScenario(v){ return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
+function refreshMaxSavingsView(){
+  $('mapTitle').textContent='Max Savings AI Optimizer'; $('visiblePill').textContent='Scenario planning';
+  if(!lastMaxSavingsScenario) loadMaxSavingsScenario(); else drawMaxSavingsScenarioMap();
+}
+function scenarioTableRows(items, cols){ return (items||[]).map(item=>`<tr>${cols.map(c=>`<td>${esc2(typeof c==='function'?c(item):item[c])}</td>`).join('')}</tr>`).join(''); }
+async function loadMaxSavingsScenario(){
+  const out=$('maxSavingsOutput'); if(out) out.innerHTML='<div class="ai-title">Building max savings scenario...</div>';
+  const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization';
+  const res=await fetch(`/api/max-savings-scenario?mode=${encodeURIComponent(mode)}`); const json=await res.json();
+  lastMaxSavingsScenario=json.selected; renderMaxSavingsScenario(json.selected); drawMaxSavingsScenarioMap();
+}
+function renderMaxSavingsScenario(s){
+  const out=$('maxSavingsOutput'); if(!out||!s) return;
+  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Proposed miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+}
+function drawMaxSavingsScenarioMap(){
+  if(!lastMaxSavingsScenario||!lineLayer) return;
+  const mode=$('maxSavingsMapMode')?.value || 'both';
+  lineLayer.clearLayers();
+  const drawProposed=mode==='both'||mode==='proposed';
+  const drawCurrent=mode==='both'||mode==='current';
+  if(drawCurrent) refreshOptimization();
+  if(drawProposed){
+    for(const route of lastMaxSavingsScenario.proposedStopSequences||[]){
+      const pts=[]; for(const stop of route.stops||[]){ const rec=records.find(r=>String(r.centerNumber||r.id)===String(stop.centerNumber)); if(rec&&rec.hasCoords) pts.push([rec.lat,rec.lng]); }
+      const plc=plcCoords[route.proposedPLC]; if(plc) pts.push([plc.lat,plc.lng]);
+      if(pts.length>1) lineLayer.addLayer(L.polyline(pts,{color:routeColor(route.routeName),weight:4,opacity:.75,dashArray:'5 5'}).bindPopup(`<b>Proposed route</b><br>${esc2(route.routeName)} → ${esc2(route.proposedPLC)}<br>Scenario savings require validation.`));
+    }
+  }
+}
+function openScenarioBrief(){ const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization'; window.open(`/api/scenario-pdf?mode=${encodeURIComponent(mode)}`,'_blank'); }
+function refreshRfqReadinessView(){ $('mapTitle').textContent='AI RFQ Data Readiness'; $('visiblePill').textContent='RFQ readiness'; if(!lastRfqReadiness) loadRfqReadiness(); }
+async function loadRfqReadiness(){
+  const out=$('rfqReadinessOutput'); if(out) out.innerHTML='<div class="ai-title">Loading RFQ readiness...</div>';
+  const res=await fetch('/api/rfq-readiness'); const rfq=await res.json(); lastRfqReadiness=rfq; renderRfqReadiness(rfq);
+}
+function renderRfqReadiness(r){
+  const out=$('rfqReadinessOutput'); if(!out||!r) return;
+  out.innerHTML=`<div class="ai-title">RFQ Readiness Score: ${r.readiness.score}/100 — ${esc2(r.readiness.band)}</div><h3>Current Data Inventory</h3><div class="scenario-kpis"><div class="scenario-kpi">Route groups<b>${r.inventory.routeGroupCount}</b></div><div class="scenario-kpi">Week A stops<b>${r.inventory.weekAStops}</b></div><div class="scenario-kpi">Week B stops<b>${r.inventory.weekBStops}</b></div><div class="scenario-kpi">Invoice rows<b>${r.inventory.invoiceRows}</b></div></div><h3>Missing Critical Data</h3><table><thead><tr><th>Missing Data Point</th><th>Why It Matters</th><th>Impact on RFQ</th><th>Owner</th><th>Priority</th><th>Suggested Ask</th></tr></thead><tbody>${scenarioTableRows(r.criticalGaps.slice(0,25), ['fieldName','businessReason','riskIfMissing','owner','priority',x=>`Please provide ${x.fieldName}`])}</tbody></table><h3>Data Requirements by Category</h3><table><thead><tr><th>Category</th><th>Field</th><th>Priority</th><th>Status</th><th>Current Source</th><th>Owner / Request From</th><th>Why Needed</th><th>KPI Supported</th><th>Recommended Format</th><th>Risk if Missing</th></tr></thead><tbody>${scenarioTableRows(r.requirements.slice(0,120), ['category','fieldName','priority','currentStatus','currentSource','owner','businessReason','kpiEnabled','recommendedFormat','riskIfMissing'])}</tbody></table><h3>McKesson / Carrier Ask List</h3><table><thead><tr><th>Ask #</th><th>Recipient</th><th>Request</th><th>Reason</th><th>Format Needed</th><th>Example Field</th><th>Priority</th></tr></thead><tbody>${scenarioTableRows(r.mckessonAskList, ['askNumber','recipient','request','reason','formatNeeded','exampleField','priority'])}</tbody></table><h3>CSL Internal Ask List</h3><table><thead><tr><th>Ask #</th><th>Recipient</th><th>Request</th><th>Reason</th><th>Format Needed</th><th>Example Field</th><th>Priority</th></tr></thead><tbody>${scenarioTableRows(r.cslInternalAskList, ['askNumber','recipient','request','reason','formatNeeded','exampleField','priority'])}</tbody></table>`;
+}
+function exportCsvFile(name, rows){ if(!rows||!rows.length) return alert('No rows to export.'); const keys=Object.keys(rows[0]); const csv=[keys.join(','),...rows.map(r=>keys.map(k=>`"${String(r[k]??'').replaceAll('"','""')}"`).join(','))].join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
+function refreshAiAssistant(){
+  $('mapTitle').textContent='AI Assistant: grounded CSL Plasma transportation Q&A';
+  $('visiblePill').textContent='AI Assistant';
+}
+
+(function initAiAssistantChat(){
+  const starterQuestions=[
+    'Which routes should we review first?',
+    'Why are PHILLY, ALLENTOWN, and BUFFALO marked Mixed PLC / Relay Validation?',
+    'Why are there zero actionable AI regrouping candidates?',
+    'Which routes are underutilized?',
+    'Which routes are high utilization?',
+    'What does the fuel surcharge audit show?',
+    'Summarize the invoice audit findings.',
+    'What should I present to Bruno?'
+  ];
+  const messages=[];
+  function chatEscape(value){ return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+  function simpleMarkdown(text){
+    return chatEscape(text)
+      .replace(/\*\*(.*?)\*\*/g,'<b>$1</b>')
+      .replace(/^- (.*)$/gm,'• $1');
+  }
+  function renderChatMeta(dataUsed=[], warnings=[], source=''){
+    const meta=$('aiChatMeta'); if(!meta) return;
+    const data=(dataUsed||[]).map(x=>`<span class="data-chip">${chatEscape(x)}</span>`).join('');
+    const warn=(warnings||[]).slice(0,8).map(x=>`<span class="warning-chip">${chatEscape(x)}</span>`).join('');
+    const sourceLabel=source==='openai'?'AI answer':source==='deterministic-fallback'?'Fallback answer':'';
+    const sourceHtml=sourceLabel?`<span class="source-chip">${sourceLabel}</span>`:'';
+    meta.innerHTML=`${sourceHtml?`<div class="chip-row">${sourceHtml}</div>`:''}${data?`<div><b>Data used</b><div class="chip-row">${data}</div></div>`:''}${warn?`<div><b>Warnings</b><div class="chip-row">${warn}</div></div>`:'<span class="mini-note">No validation warnings returned for the last answer.</span>'}`;
+  }
+  function appendMessage(role, content, extraClass=''){
+    const history=$('aiChatHistory'); if(!history) return;
+    const div=document.createElement('div');
+    div.className=`ai-chat-msg ${role} ${extraClass}`.trim();
+    div.innerHTML=simpleMarkdown(content);
+    history.appendChild(div);
+    history.scrollTop=history.scrollHeight;
+  }
+  function setLoading(isLoading){
+    const btn=$('aiChatSend'); if(btn){ btn.disabled=isLoading; btn.textContent=isLoading?'Thinking…':'Send'; }
+  }
+  function renderStarters(){
+    const box=$('aiChatStarters'); if(!box) return;
+    box.innerHTML=starterQuestions.map(q=>`<button class="action" type="button" data-ai-starter="${chatEscape(q)}">${chatEscape(q)}</button>`).join('');
+    box.querySelectorAll('[data-ai-starter]').forEach(btn=>btn.addEventListener('click',()=>{ const input=$('aiChatInput'); if(input){ input.value=btn.dataset.aiStarter; sendAiChat(); } }));
+  }
+  async function checkAiStatus(){
+    const warn=$('aiChatSetupWarning'); if(!warn) return;
+    try{
+      const res=await fetch('/api/ai-chat');
+      const json=await res.json();
+      if(json.configured){ warn.style.display='none'; warn.innerHTML=''; }
+      else { warn.style.display='block'; warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; }
+    }catch(err){
+      warn.style.display='block'; warn.innerHTML='<b>Status warning:</b> AI status could not be verified.';
+    }
+  }
+  async function sendAiChat(){
+    const input=$('aiChatInput'); if(!input) return;
+    const text=String(input.value||'').trim(); if(!text) return;
+    input.value='';
+    appendMessage('user', text);
+    messages.push({role:'user', content:text});
+    setLoading(true);
+    try{
+      const selectedRoute=$('optRouteFilter')?.value || $('scheduleRouteFilter')?.value || '';
+      const res=await fetch('/api/ai-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages, routeName:selectedRoute, mode:activeView})});
+      const json=await res.json();
+      if(!res.ok && !(json && json.answer)) throw new Error(json?.warnings?.join('; ') || json?.error || 'AI Assistant request failed');
+      appendMessage('assistant', json.answer || 'No answer returned.');
+      messages.push({role:'assistant', content:json.answer || ''});
+      renderChatMeta(json.dataUsed || [], json.warnings || [], json.source || '');
+      if(res.status===503){ const warn=$('aiChatSetupWarning'); if(warn){ warn.style.display='block'; warn.innerHTML='<b>Setup warning:</b> The server OpenAI key is missing. Showing deterministic app-data answers until the key and model are configured.'; } }
+    }catch(err){
+      appendMessage('assistant', `Error: ${err.message}`, 'error');
+      renderChatMeta([], [err.message], 'deterministic-fallback');
+    }finally{
+      setLoading(false);
+    }
+  }
+  window.sendAiChat=sendAiChat;
+  renderStarters();
+  checkAiStatus();
+  const send=$('aiChatSend'); if(send) send.addEventListener('click', sendAiChat);
+  const clear=$('aiChatClear'); if(clear) clear.addEventListener('click', ()=>{ messages.length=0; const h=$('aiChatHistory'); if(h) h.innerHTML='<div class="ai-chat-msg assistant">Chat cleared. Ask a route, invoice, KPI, optimization, or audit question.</div>'; renderChatMeta([], [], ''); });
+  const explain=$('aiChatExplainRoute'); if(explain) explain.addEventListener('click', ()=>{ const route=$('optRouteFilter')?.value || $('scheduleRouteFilter')?.value || 'PHILLY'; const input=$('aiChatInput'); if(input){ input.value=`Explain ${route}`; sendAiChat(); } });
+  const input=$('aiChatInput'); if(input) input.addEventListener('keydown', (event)=>{ if((event.metaKey||event.ctrlKey) && event.key==='Enter') sendAiChat(); });
+})();
+
 refresh();
 
 
@@ -3587,7 +3895,7 @@ refresh();
         <div><b>New PLC:</b> ${htmlEscape(r.newPLC || '')}</div>
         <div><b>Stops:</b> ${htmlEscape((r.stops||[]).map(s => s.name || s.routeName || s.id || s).join(' → '))}</div>
         <div><b>Miles:</b> current ${Number(r.currentChargeableMiles||0).toLocaleString()} → new ${Number(r.newChargeableMiles||0).toLocaleString()}</div>
-        <div><b>Weekly savings:</b> $${Number(r.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+        <div><b>Weekly opportunity:</b> $${Number(r.weeklySavings||0).toLocaleString(undefined,{maximumFractionDigits:0})} | <b>Annual:</b> $${Number(r.annualSavings||0).toLocaleString(undefined,{maximumFractionDigits:0})}</div>
         <div><b>Reason:</b> ${htmlEscape(r.reason || '')}</div>
         <div><b>Risks:</b> ${htmlEscape((r.risks||[]).join('; '))}</div>
         <div><b>Confidence:</b> ${htmlEscape(r.confidence || result.confidence || '')}</div>
