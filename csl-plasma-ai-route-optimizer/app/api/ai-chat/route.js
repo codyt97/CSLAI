@@ -14,6 +14,14 @@ function extractText(data) {
   return data.output_text || data.output?.flatMap((item) => item.content || []).map((content) => content.text || '').join('') || '';
 }
 
+function fallbackWarningForOpenAiError(err) {
+  const message = String(err?.message || '');
+  if (/unsupported parameter|unsupported.*parameter|does not support/i.test(message)) {
+    return 'AI model request failed because the configured model does not support one of the request parameters. The app returned a deterministic data-grounded fallback answer.';
+  }
+  return `AI request failed; returned deterministic app-data answer. ${message}`;
+}
+
 export async function GET() {
   const configured = Boolean(process.env.OPENAI_API_KEY);
   return Response.json({
@@ -48,8 +56,7 @@ export async function POST(req) {
           input: [
             { role: 'system', content: buildAiChatSystemPrompt() },
             { role: 'user', content: buildAiChatUserPrompt({ messages, context }) }
-          ],
-          temperature: 0.2
+          ]
         })
       });
 
@@ -66,7 +73,7 @@ export async function POST(req) {
         source: 'openai'
       });
     } catch (err) {
-      return Response.json(buildFallbackChatResponse(context, `AI request failed; returned deterministic app-data answer. ${err.message}`));
+      return Response.json(buildFallbackChatResponse(context, fallbackWarningForOpenAiError(err)));
     }
   } catch (err) {
     return Response.json({
