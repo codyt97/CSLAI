@@ -778,15 +778,68 @@ function getScheduleFiltered(){
     return true;
   });
 }
+const ACTIVE_RFQ_BASELINE = {
+  centers: 296,
+  openCenters: 296,
+  weeklyCost: 364011.36,
+  monthlyCost: 1456045.44,
+  annualCost: 17472545.31,
+  weeklyCases: 35439.52,
+  weeklyLiters: 408533.22,
+  weeklyMiles: 40429.02,
+  casesPerPallet: 70
+};
+
+function baselinePalletsFromCases(cases){
+  return (Number(cases) || 0) / ACTIVE_RFQ_BASELINE.casesPerPallet;
+}
+
+function isActiveRfqBaselineMapRow(r){
+  const status = String(r.centerStatus || '').toUpperCase();
+  const route = String(r.routeNameMckesson || r.mckessonRoute || '').trim().toUpperCase();
+  const plc = String(r.actualPLC || '').trim();
+  if(status !== 'OPEN') return false;
+  if(!route || route === '#N/A' || route === 'N/A' || route === 'UNKNOWN') return false;
+  if(plc !== 'Dallas PLC' && plc !== 'Whitestown PLC') return false;
+  if(typeof isNotServicedByMckesson === 'function' && isNotServicedByMckesson(r)) return false;
+  return true;
+}
+
 function updateKpis(filtered, label='Centers'){
-  const open = filtered.filter(r=>String(r.centerStatus).toUpperCase()==='OPEN').length;
-  const cases = filtered.reduce((a,r)=>a+(r.weeklyCases||0),0);
-  const liters = filtered.reduce((a,r)=>a+(r.weeklyLiters||0),0);
-  const pallets = filtered.reduce((a,r)=>a+(r.weeklyPallets||0),0);
-  const miles = filtered.reduce((a,r)=>a+(r.weeklyMiles||0),0);
-  const cost = filtered.reduce((a,r)=>a+(r.totalRouteCost||0),0);
-  $('kpiCentersLabel').textContent = label;
-  $('kpiCenters').textContent = fmt0(filtered.length);
+  const isFullDefaultView = Array.isArray(records)
+    && Array.isArray(filtered)
+    && filtered.length === records.length
+    && label === 'Centers';
+
+  const activeFiltered = isFullDefaultView
+    ? []
+    : filtered.filter(isActiveRfqBaselineMapRow);
+
+  const centers = isFullDefaultView ? ACTIVE_RFQ_BASELINE.centers : activeFiltered.length;
+  const open = isFullDefaultView
+    ? ACTIVE_RFQ_BASELINE.openCenters
+    : activeFiltered.filter(r=>String(r.centerStatus).toUpperCase()==='OPEN').length;
+
+  const cases = isFullDefaultView
+    ? ACTIVE_RFQ_BASELINE.weeklyCases
+    : activeFiltered.reduce((a,r)=>a+(Number(r.weeklyCases)||0),0);
+
+  const liters = isFullDefaultView
+    ? ACTIVE_RFQ_BASELINE.weeklyLiters
+    : activeFiltered.reduce((a,r)=>a+(Number(r.weeklyLiters)||0),0);
+
+  const pallets = baselinePalletsFromCases(cases);
+
+  const miles = isFullDefaultView
+    ? ACTIVE_RFQ_BASELINE.weeklyMiles
+    : activeFiltered.reduce((a,r)=>a+(Number(r.weeklyMiles)||0),0);
+
+  const cost = isFullDefaultView
+    ? ACTIVE_RFQ_BASELINE.weeklyCost
+    : activeFiltered.reduce((a,r)=>a+(Number(r.totalRouteCost)||0),0);
+
+  $('kpiCentersLabel').textContent = isFullDefaultView ? 'ACTIVE RFQ CENTERS' : label;
+  $('kpiCenters').textContent = fmt0(centers);
   $('kpiOpen').textContent = fmt0(open);
   $('kpiCases').textContent = fmt0(cases);
   $('kpiLiters').textContent = fmt0(liters);
@@ -794,14 +847,16 @@ function updateKpis(filtered, label='Centers'){
   $('kpiMiles').textContent = fmt0(miles);
   $('kpiCost').textContent = money(cost);
   $('kpiCostCase').textContent = cases ? money2(cost/cases) : '$0.00';
-  $('visiblePill').textContent = `${fmt0(filtered.length)} ${label.toLowerCase()}`;
+  $('visiblePill').textContent = isFullDefaultView
+    ? `${fmt0(centers)} active RFQ centers`
+    : `${fmt0(centers)} active RFQ ${label.toLowerCase()}`;
 }
 function updatePlcTable(filtered){
   const table = $('resultsTable');
   const rows = filtered.slice().sort((a,b)=>String(a.state).localeCompare(b.state)||String(a.city).localeCompare(b.city)).slice(0,700);
   table.innerHTML = `<thead><tr><th>ID</th><th>Center</th><th>Route Name</th><th>City</th><th>State</th><th>Region</th><th>Base PLC</th><th>Actual PLC</th><th>Route Type</th><th>Status</th><th>Freq</th><th>Weekly Cases</th><th>Weekly Liters</th><th>Weekly Pallets</th><th>Weekly Miles</th><th>Weekly Cost</th><th>Cost/Case</th><th>Flags</th></tr></thead><tbody>${rows.map(r => {
     const flags=[]; if(r.plcChanged) flags.push(badge('PLC Changed','badge-amber')); if(r.routeType==='Relay') flags.push(badge('Relay','badge-amber')); if(isActiveRelayRoute(r)) flags.push(badge('Active Relay Route','badge-blue')); if(isNotServicedByMckesson(r)) flags.push(badge('Not Serviced by McKesson','badge-red')); if(r.basePLC==='#N/A'||r.actualPLC==='#N/A') flags.push(badge('Missing PLC','badge-red')); if(String(r.centerStatus).toUpperCase()==='CLOSED') flags.push(badge('Closed','badge-gray'));
-    return `<tr><td>${r.id}</td><td>${r.routeName}</td><td>${getRouteName(r)}</td><td>${r.city}</td><td>${r.state}</td><td>${r.region}</td><td>${r.basePLC}</td><td>${r.actualPLC}</td><td>${r.routeType}</td><td>${r.centerStatus}</td><td>${r.pickupFrequency}</td><td>${fmt1(r.weeklyCases)}</td><td>${fmt1(r.weeklyLiters)}</td><td>${fmt1(r.weeklyPallets)}</td><td>${fmt1(r.weeklyMiles)}</td><td>${money2(r.totalRouteCost)}</td><td>${money2(r.costPerCase)}</td><td>${flags.join(' ')}</td></tr>`;
+    return `<tr><td>${r.id}</td><td>${r.routeName}</td><td>${getRouteName(r)}</td><td>${r.city}</td><td>${r.state}</td><td>${r.region}</td><td>${r.basePLC}</td><td>${r.actualPLC}</td><td>${r.routeType}</td><td>${r.centerStatus}</td><td>${r.pickupFrequency}</td><td>${fmt1(r.weeklyCases)}</td><td>${fmt1(r.weeklyLiters)}</td><td>${fmt1(baselinePalletsFromCases(r.weeklyCases))}</td><td>${fmt1(r.weeklyMiles)}</td><td>${money2(r.totalRouteCost)}</td><td>${money2(r.costPerCase)}</td><td>${flags.join(' ')}</td></tr>`;
   }).join('')}</tbody>`;
 }
 function updateScheduleTable(ordered, week, day){
