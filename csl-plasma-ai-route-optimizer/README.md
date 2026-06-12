@@ -10,13 +10,35 @@ This project wraps the existing CSL Plasma network HTML app with secure server-s
 
 ## Local data generation
 
-Raw files in `source-data/` are local/private working files and should not be committed. To regenerate source-parsed runtime JSON on a local machine that has those Excel/Word files, run:
+Raw files in `source-data/` are local/private working files and should not be committed. The parser now uses one consolidated Excel workbook plus the two Word route schedule documents:
+
+- `source-data/Data base final RFQ.xlsx`
+  - Primary sheet: `Data base RFQ`
+  - `Route Name Mckensson` is the current McKesson route grouping.
+  - Column O is the Week A pattern and column P is the Week B pattern.
+  - Columns Q through W are pickup days across the two-week schedule.
+  - Column Z is weight per case.
+  - Column AQ is the McKesson billed weekly baseline amount.
+  - Valid PLC values are only `Dallas PLC` and `Whitestown PLC`; `#N/A` and blanks are treated as missing/not assigned.
+  - Active RFQ baseline rows must be visible/non-hidden Excel rows with `Center Status = OPEN` and an assigned McKesson route.
+- `source-data/Week A Schedule based on Routes.docx`
+- `source-data/Week B Schedule Based on Routes.docx`
+
+The old five-workbook Excel source layout (`Billing Center FY26.xlsx`, `Plasma Centers cases details.xlsx`, `Plasma Centers Information.xlsx`, `Rate Table.xlsx`, and `Schedule plasma centers.xlsx`) is no longer required by the parser.
+
+To inspect the consolidated workbook and Word schedules without writing generated JSON, run:
+
+```bash
+node scripts/build-data.mjs --dry-run
+```
+
+To regenerate source-parsed runtime JSON on a local machine that has those Excel/Word files, run:
 
 ```bash
 node scripts/build-data.mjs
 ```
 
-The script writes the generated runtime artifacts to `lib/data/*.json`, which are the JSON files the app and audit APIs use at runtime. Keep raw `.xlsx`, `.docx`, and `.pdf` files out of git.
+The non-dry-run script writes generated runtime artifacts to `lib/data/*.json`, which are the JSON files the app and audit APIs use at runtime. Keep raw `.xlsx`, `.docx`, and `.pdf` files out of git.
 
 ## Important calculation rules
 
