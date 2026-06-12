@@ -811,6 +811,33 @@ function getScheduleFiltered(){
     return true;
   });
 }
+const ACTIVE_RFQ_BASELINE = {
+  centers: 296,
+  openCenters: 296,
+  weeklyCost: 364011.36,
+  monthlyCost: 1456045.44,
+  annualCost: 17472545.31,
+  weeklyCases: 35439.52,
+  weeklyLiters: 408533.22,
+  weeklyMiles: 40429.02,
+  casesPerPallet: 70
+};
+
+function baselinePalletsFromCases(cases){
+  return (Number(cases) || 0) / ACTIVE_RFQ_BASELINE.casesPerPallet;
+}
+
+function isActiveRfqBaselineMapRow(r){
+  const status = String(r.centerStatus || '').toUpperCase();
+  const route = String(r.routeNameMckesson || r.mckessonRoute || '').trim().toUpperCase();
+  const plc = String(r.actualPLC || '').trim();
+  if(status !== 'OPEN') return false;
+  if(!route || route === '#N/A' || route === 'N/A' || route === 'UNKNOWN') return false;
+  if(plc !== 'Dallas PLC' && plc !== 'Whitestown PLC') return false;
+  if(typeof isNotServicedByMckesson === 'function' && isNotServicedByMckesson(r)) return false;
+  return true;
+}
+
 function updateKpis(filtered, label='Centers'){
   const activeSummary = sumActiveRfq(filtered);
   const open = activeSummary.open;
