@@ -66,6 +66,10 @@ function number(value, digits = 2) {
   return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: digits });
 }
 
+function pct(value) {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : 'n/a';
+}
+
 function numeric(value) {
   const text = clean(value).replace(/[,$%]/g, '');
   if (!text || /^#?N\/A$/i.test(text)) return 0;
@@ -110,6 +114,21 @@ function attr(tag, name) {
 function columnIndex(ref) {
   const letters = String(ref || '').match(/[A-Z]+/)?.[0] || 'A';
   return [...letters].reduce((sum, ch) => sum * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+}
+
+function columnName(index) {
+  let n = index + 1;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function cellAddress(row, index) {
+  return `${columnName(index)}${row.excelRowNumber || ''}`;
 }
 
 function parseRels(xml = '') {
@@ -195,7 +214,7 @@ function readWorkbook() {
 
 function resolveSheet(workbook, wanted) {
   const candidates = aliases[wanted] || [wanted];
-  return candidates.find((name) => workbook.byName.has(name)) || '';
+  return candidates.find((name) => workbook.byName.has(name) || workbook.rowsByName.has(name)) || '';
 }
 
 function getField(row, patterns, fallbackIndex) {
@@ -213,6 +232,23 @@ function normalizePlc(value) {
   return [...validPlcs].find((plc) => plc.toLowerCase() === text.toLowerCase()) || '';
 }
 
+function normalizeName(value) {
+  const states = 'al ak az ar ca co ct de fl ga hi ia id il in ks ky la ma md me mi mn mo ms mt nc nd ne nh nj nm nv ny oh ok or pa ri sc sd tn tx ut va vt wa wi wv wy dc';
+  const statePattern = new RegExp(`\\b(${states.split(' ').join('|')})\\b`, 'g');
+  return key(value)
+    .replace(/\b0*\d{1,4}\b/g, '')
+    .replace(statePattern, '')
+    .replace(/\b(csl|plasma|center|centre)\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractCenterNumber(value) {
+  const text = clean(value);
+  const matches = [...text.matchAll(/\b0*(\d{2,4})\b/g)].map((m) => String(Number(m[1])));
+  return matches.at(-1) || '';
+}
+
 function isSummary(row) {
   const text = Object.values(row).filter((v) => typeof v !== 'object').join(' ');
   const centerNumber = getField(row, [/^center number$/, /^center$/, /^center #$/], fallback.centerNumber);
@@ -224,11 +260,15 @@ function center(row) {
   const status = getField(row, [/^center status$/, /^status$/], fallback.status);
   const cases = numeric(getField(row, [/total cases by week/, /weekly cases/], fallback.cases));
   const liters = numeric(getField(row, [/total liters by week/, /weekly liters/], fallback.liters));
+  const centerNumber = getField(row, [/^center name$/, /^center number$/, /^center$/], fallback.centerNumber);
+  const centerName = getField(row, [/^route name$/, /^name$/, /^center name$/], fallback.centerName);
   return {
     sourceRowNumber: row.sourceRowNumber,
     hidden: row.excelRowHidden,
-    centerNumber: getField(row, [/^center name$/, /^center number$/, /^center$/], fallback.centerNumber),
-    centerName: getField(row, [/^route name$/, /^name$/, /^center name$/], fallback.centerName),
+    centerNumber: String(Number(centerNumber) || centerNumber).padStart(3, '0'),
+    centerNumberKey: String(Number(centerNumber) || centerNumber),
+    centerName,
+    centerNameKey: normalizeName(centerName),
     route,
     status,
     actualPlc: normalizePlc(getField(row, [/^actual plc$/, /current plc/, /destination plc/], fallback.actualPlc)),
@@ -294,10 +334,11 @@ function routeSummary(activeCenters) {
 function table(rows, columns, limit = rows.length) {
   const slice = rows.slice(0, limit);
   if (!slice.length) return '  (none)';
-  const widths = columns.map((col) => Math.max(col.label.length, ...slice.map((row) => String(col.value(row)).length)));
+  const widths = columns.map((col) => Math.min(42, Math.max(col.label.length, ...slice.map((row) => String(col.value(row)).length))));
+  const clip = (text, width) => String(text).length > width ? `${String(text).slice(0, width - 1)}…` : String(text);
   const header = columns.map((col, i) => col.label.padEnd(widths[i])).join(' | ');
   const line = widths.map((w) => '-'.repeat(w)).join('-|-');
-  const body = slice.map((row) => columns.map((col, i) => String(col.value(row)).padEnd(widths[i])).join(' | ')).join('\n');
+  const body = slice.map((row) => columns.map((col, i) => clip(col.value(row), widths[i]).padEnd(widths[i])).join(' | ')).join('\n');
   return `${header}\n${line}\n${body}`;
 }
 
@@ -318,8 +359,9 @@ function inferGrain(headers, rows) {
 function inspectGeneric(workbook, sheetLabel) {
   const sheetName = resolveSheet(workbook, sheetLabel);
   const rows = sheetName ? workbook.byName.get(sheetName) || [] : [];
+  const rawRows = sheetName ? workbook.rowsByName.get(sheetName) || [] : [];
   const headers = sheetName ? workbook.headersByName.get(sheetName) || [] : [];
-  return { sheetName, rows, headers };
+  return { sheetName, rows, rawRows, headers };
 }
 
 function sumField(rows, patterns) {
@@ -336,13 +378,29 @@ function routeField(row) {
   return getField(row, [/route name mckensson/, /route name mckesson/, /^route name$/, /^route$/, /lane/]);
 }
 
+function dateFromExcel(value) {
+  const n = numeric(value);
+  if (!n || n < 20000 || n > 80000) return null;
+  return new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+}
+
+function monthKey(date) {
+  return date ? `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}` : '';
+}
+
+function weekKey(date) {
+  if (!date) return '';
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return `${date.getUTCFullYear()}-W${String(Math.floor((date - start) / 604800000) + 1).padStart(2, '0')}`;
+}
+
 function routeTotals(rows, knownRoutes) {
   const mapped = rows.map((row) => ({ row, route: routeField(row) })).filter((r) => r.route);
   const groups = groupBy(mapped, (r) => r.route.toUpperCase());
   const out = [...groups.entries()].map(([route, items]) => ({
     route,
     rows: items.length,
-    billed: sumField(items.map((i) => i.row), [/amount billed/, /billed amount/, /total route cost/, /total cost/, /total/]) || 0,
+    billed: sumField(items.map((i) => i.row), [/^bol total$/i, /amount billed/, /billed amount/, /total route cost/, /total cost/]) || 0,
     fuel: sumField(items.map((i) => i.row), [/fuel.*\$/, /fuel surcharge amount/, /fuel surcharge/]) || 0,
     miles: sumField(items.map((i) => i.row), [/miles per stop/, /miles/]) || 0
   }));
@@ -389,25 +447,173 @@ function unmatchedDocStops(doc, centers) {
   return unmatched;
 }
 
-function modelDiagnostics(routes) {
-  const rows = [];
-  for (const route of routes) {
-    const models = [
-      ['Model A: fixed route weekly rate', false, 0],
-      ['Model B: miles × implied rate per mile', Boolean(route.miles && route.aq), route.miles && route.aq ? route.miles * (route.aq / route.miles) : 0],
-      ['Model C: linehaul + fuel surcharge', Boolean(route.linehaul || route.fuelAmount), route.linehaul + route.fuelAmount],
-      ['Model D: linehaul + fuel surcharge + storage + other charges', Boolean(route.linehaul || route.fuelAmount || route.storage || route.other), route.linehaul + route.fuelAmount + route.storage + route.other],
-      ['Model E: base route amount + stop count logic', false, 0],
-      ['Model F: 48-foot trailer route amount + fuel surcharge + accessorials', Boolean(route.linehaul || route.fuelAmount || route.storage || route.other), route.linehaul + route.fuelAmount + route.storage + route.other]
-    ];
-    for (const [model, available, estimated] of models) {
-      const variance = available ? estimated - route.aq : null;
-      const pct = available && route.aq ? Math.abs(variance) / route.aq : null;
-      const quality = pct === null ? 'Unknown' : pct <= 0.01 ? 'Strong' : pct <= 0.05 ? 'Possible' : pct <= 0.10 ? 'Weak' : 'No match';
-      rows.push({ route: route.route, model, available, estimated, aq: route.aq, variance, pct, quality });
+function rateTableRawInspection(rawRows) {
+  const nonEmptyRows = rawRows.filter((row) => row.some((cell) => clean(cell)));
+  const maxColumns = Math.max(0, ...rawRows.map((row) => row.length));
+  const numericCells = [];
+  const labels = [];
+  for (const row of rawRows) {
+    row.forEach((cell, index) => {
+      const text = clean(cell);
+      if (!text) return;
+      const n = numeric(text);
+      if (Number.isFinite(n) && text.match(/\d/) && !/[A-Za-z]/.test(text.replace(/[,$%.\-]/g, ''))) numericCells.push({ address: cellAddress(row, index), value: n, text });
+      if (/[A-Za-z]/.test(text) && /rate|mile|fuel|surcharge|accessorial|storage|trailer|equipment|reefer|48|minimum|pickup|stop/i.test(text)) labels.push({ address: cellAddress(row, index), text });
+    });
+  }
+  const breakpoints = numericCells.filter((c) => c.value >= 0 && c.value <= 5000 && Number.isInteger(c.value)).slice(0, 40);
+  const rates = numericCells.filter((c) => c.value > 0 && c.value < 1000 && !Number.isInteger(c.value)).slice(0, 40);
+  const findRows = (pattern) => nonEmptyRows.filter((row) => row.some((cell) => pattern.test(clean(cell)))).slice(0, 12)
+    .map((row) => `R${row.excelRowNumber}: ${row.slice(0, 12).map((cell, i) => clean(cell) ? `${cellAddress(row, i)}=${clean(cell)}` : '').filter(Boolean).join(' | ')}`);
+  return {
+    rowCount: rawRows.length,
+    nonEmptyCount: nonEmptyRows.length,
+    maxColumns,
+    firstRows: nonEmptyRows.slice(0, 60).map((row) => `R${row.excelRowNumber}: ${row.slice(0, 12).map((cell, i) => clean(cell) ? `${cellAddress(row, i)}=${clean(cell)}` : '').filter(Boolean).join(' | ')}`),
+    labels: labels.slice(0, 30),
+    numericSample: numericCells.slice(0, 40),
+    breakpoints,
+    rates,
+    fuelRows: findRows(/fuel|surcharge/i),
+    trailerRows: findRows(/48|trailer|equipment|reefer/i),
+    accessorialRows: findRows(/accessorial|storage|other|fee|charge|pickup|stop/i)
+  };
+}
+
+function buildCenterIndexes(activeCenters) {
+  const byNumber = new Map();
+  const byName = new Map();
+  for (const c of activeCenters) {
+    if (c.centerNumberKey) byNumber.set(c.centerNumberKey, c);
+    if (c.centerNameKey) byName.set(c.centerNameKey, c);
+  }
+  return { byNumber, byName };
+}
+
+function matchFleetRow(row, indexes) {
+  const centerName = getField(row, [/^center name$/, /shipper name/, /consignee name/]);
+  const num = extractCenterNumber(centerName);
+  if (num && indexes.byNumber.has(num)) return { center: indexes.byNumber.get(num), method: 'center-number' };
+  const nameKey = normalizeName(centerName);
+  if (nameKey && indexes.byName.has(nameKey)) return { center: indexes.byName.get(nameKey), method: 'center-name' };
+  const nonCenter = /plc|warehouse|kedplasma|biolife|baxter|versiti|lifestream|inova|opi|rxcrossroads|erlanger/i.test(centerName);
+  if (!nonCenter && nameKey.length >= 5) {
+    for (const [candidate, center] of indexes.byName.entries()) {
+      if (candidate.length >= 5 && nameKey.includes(candidate)) return { center, method: 'center-name-contained' };
     }
   }
-  return rows;
+  return { center: null, method: 'unmatched', centerName };
+}
+
+function aggregateFleetByRoute(fleetRows, activeCenters) {
+  const indexes = buildCenterIndexes(activeCenters);
+  const unmatched = [];
+  const routeMap = new Map();
+  let matchedRows = 0;
+  for (const row of fleetRows) {
+    const match = matchFleetRow(row, indexes);
+    if (!match.center) {
+      unmatched.push(getField(row, [/^center name$/, /shipper name/, /consignee name/]) || '(blank)');
+      continue;
+    }
+    matchedRows += 1;
+    const route = match.center.route;
+    if (!routeMap.has(route)) routeMap.set(route, { route, amount: 0, fuel: 0, miles: 0, cases: 0, liters: 0, rows: 0 });
+    const out = routeMap.get(route);
+    out.amount += numeric(getField(row, [/amount billed/, /billed amount/]));
+    out.fuel += numeric(getField(row, [/fuel surcharge/, /fuel.*\$/]));
+    out.miles += numeric(getField(row, [/^miles$/]));
+    out.cases += numeric(getField(row, [/actual cases/, /^cases$/]));
+    out.liters += numeric(getField(row, [/^liters$/]));
+    out.rows += 1;
+  }
+  return {
+    totalRows: fleetRows.length,
+    matchedRows,
+    unmatchedRows: fleetRows.length - matchedRows,
+    matchRate: fleetRows.length ? matchedRows / fleetRows.length : 0,
+    unmatchedNames: [...new Set(unmatched)].slice(0, 25),
+    routes: [...routeMap.values()].sort((a, b) => a.route.localeCompare(b.route))
+  };
+}
+
+function aggregateInvoiceByRoute(invoiceRows) {
+  const routeMap = new Map();
+  for (const row of invoiceRows) {
+    const route = clean(routeField(row)).toUpperCase();
+    if (!route) continue;
+    if (!routeMap.has(route)) {
+      routeMap.set(route, {
+        route,
+        rows: 0,
+        bols: new Set(),
+        linehaul: 0,
+        fuel: 0,
+        bolTotal: 0,
+        cases: 0,
+        liters: 0,
+        miles: 0,
+        rateMiles: 0,
+        months: new Set(),
+        weeks: new Set()
+      });
+    }
+    const out = routeMap.get(route);
+    out.rows += 1;
+    const bol = getField(row, [/^bol$/i]);
+    if (bol) out.bols.add(bol);
+    out.linehaul += numeric(getField(row, [/linehaul amount/, /linehaul/]));
+    out.fuel += numeric(getField(row, [/fuel surcharge/]));
+    out.bolTotal += numeric(getField(row, [/^bol total$/i]));
+    out.cases += numeric(getField(row, [/^cases$/]));
+    out.liters += numeric(getField(row, [/^liters$/]));
+    out.miles += numeric(getField(row, [/^miles$/]));
+    out.rateMiles += numeric(getField(row, [/rate miles/]));
+    const date = dateFromExcel(getField(row, [/pickup date/, /invoice date/]));
+    const m = monthKey(date);
+    const w = weekKey(date);
+    if (m) out.months.add(m);
+    if (w) out.weeks.add(w);
+  }
+  return [...routeMap.values()].map((r) => ({
+    ...r,
+    uniqueBolCount: r.bols.size,
+    monthCount: r.months.size,
+    weekCount: r.weeks.size,
+    avgCostPerMile: r.miles ? r.bolTotal / r.miles : 0,
+    avgFuelPctOfTotal: r.bolTotal ? r.fuel / r.bolTotal : 0,
+    impliedFuelPct: r.linehaul ? r.fuel / r.linehaul : 0,
+    impliedLinehaulRatePerMile: r.rateMiles ? r.linehaul / r.rateMiles : 0,
+    impliedTotalRatePerMile: r.rateMiles ? r.bolTotal / r.rateMiles : 0
+  })).sort((a, b) => a.route.localeCompare(b.route));
+}
+
+function compareInvoiceToAq(routes, invoiceRoutes) {
+  const invoiceMap = new Map(invoiceRoutes.map((r) => [r.route, r]));
+  return routes.map((route) => {
+    const invoice = invoiceMap.get(route.route.toUpperCase());
+    const weeklyAvg = invoice?.weekCount ? invoice.bolTotal / invoice.weekCount : 0;
+    const monthlyAvg = invoice?.monthCount ? invoice.bolTotal / invoice.monthCount : 0;
+    const variance = weeklyAvg ? weeklyAvg - route.aq : 0;
+    return {
+      route: route.route,
+      aq: route.aq,
+      rawTotal: invoice?.bolTotal || 0,
+      monthlyAvg,
+      weeklyAvg,
+      basis: invoice?.weekCount ? 'weekly average' : invoice?.monthCount ? 'monthly average' : invoice ? 'raw FY26 total' : 'unknown period',
+      variance,
+      variancePct: weeklyAvg && route.aq ? Math.abs(variance) / route.aq : null
+    };
+  });
+}
+
+function matchQuality(variancePct) {
+  if (variancePct === null || !Number.isFinite(variancePct)) return 'Unknown';
+  if (variancePct <= 0.01) return 'Strong';
+  if (variancePct <= 0.05) return 'Possible';
+  if (variancePct <= 0.10) return 'Weak';
+  return 'No match';
 }
 
 function printSection(title) {
@@ -477,20 +683,34 @@ printSection('4. Center Mapping pick up inspection');
 printSection('5. McKesson Fleet spend FY 26 inspection');
 const fleet = inspectGeneric(workbook, 'McKesson Fleet spend FY 26');
 const fleetTotals = routeTotals(fleet.rows, knownRoutes);
+const fleetByRoute = aggregateFleetByRoute(fleet.rows, centers.filter((c) => clean(c.route) && clean(c.route) !== '#N/A'));
 console.log(`Headers: ${fleet.headers.filter(Boolean).join(' | ') || '(none detected)'}`);
 console.log(`Row count: ${fleet.rows.length}`);
 console.log(`Guessed row grain: ${inferGrain(fleet.headers, fleet.rows)}`);
 console.log(`Fields found - route name: ${classifyHeaders(fleet.headers, [/route/i, /lane/i])}; stop/center: ${classifyHeaders(fleet.headers, [/stop/i, /center/i])}; miles: ${classifyHeaders(fleet.headers, [/mile/i])}; miles per stop: ${classifyHeaders(fleet.headers, [/mile.*stop/i])}`);
 console.log(`Fields found - billed amount: ${classifyHeaders(fleet.headers, [/amount billed/i, /billed amount/i, /total/i])}; fuel surcharge amount: ${classifyHeaders(fleet.headers, [/fuel.*\$/i, /fuel surcharge/i])}; fuel surcharge %: ${classifyHeaders(fleet.headers, [/fuel.*%/i])}; linehaul: ${classifyHeaders(fleet.headers, [/linehaul/i])}`);
 console.log(`Fields found - storage: ${classifyHeaders(fleet.headers, [/storage/i])}; other/accessorial: ${classifyHeaders(fleet.headers, [/other/i, /accessorial/i])}; date/month/week: ${classifyHeaders(fleet.headers, [/date/i, /month/i, /week/i, /period/i])}`);
-console.log(`Top 15 routes by billed amount:\n${table(fleetTotals.out.sort((a, b) => b.billed - a.billed), [{ label: 'Route', value: (r) => r.route }, { label: 'Rows', value: (r) => r.rows }, { label: 'Billed', value: (r) => money(r.billed) }], 15)}`);
-console.log(`Top 15 routes by fuel surcharge:\n${table(fleetTotals.out.sort((a, b) => b.fuel - a.fuel), [{ label: 'Route', value: (r) => r.route }, { label: 'Fuel', value: (r) => money(r.fuel) }], 15)}`);
-console.log(`Top 15 routes by miles:\n${table(fleetTotals.out.sort((a, b) => b.miles - a.miles), [{ label: 'Route', value: (r) => r.route }, { label: 'Miles', value: (r) => number(r.miles) }], 15)}`);
-console.log(`Unmapped route names (first 25): ${fleetTotals.unmapped.join(', ') || '(none detected)'}`);
+console.log(`Direct route totals available: ${fleetTotals.out.length ? 'yes' : 'no (no route field detected)'}`);
+console.log(`Center-to-route matched Fleet Spend rows: ${fleetByRoute.matchedRows} / ${fleetByRoute.totalRows} (${pct(fleetByRoute.matchRate)})`);
+console.log(`Unmatched Fleet Spend rows: ${fleetByRoute.unmatchedRows}`);
+console.log(`Top 25 unmatched Fleet Spend center names: ${fleetByRoute.unmatchedNames.join(', ') || '(none)'}`);
+console.log(`Route-level Fleet Spend totals after center match:\n${table(fleetByRoute.routes, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'Rows', value: (r) => r.rows },
+  { label: 'Amount', value: (r) => money(r.amount) },
+  { label: 'Fuel', value: (r) => money(r.fuel) },
+  { label: 'Miles', value: (r) => number(r.miles) },
+  { label: 'Cases', value: (r) => number(r.cases) },
+  { label: 'Liters', value: (r) => number(r.liters) }
+])}`);
+console.log(`Top 15 routes by Fleet amount billed:\n${table([...fleetByRoute.routes].sort((a, b) => b.amount - a.amount), [{ label: 'Route', value: (r) => r.route }, { label: 'Rows', value: (r) => r.rows }, { label: 'Amount', value: (r) => money(r.amount) }], 15)}`);
+console.log(`Top 15 routes by Fleet fuel surcharge:\n${table([...fleetByRoute.routes].sort((a, b) => b.fuel - a.fuel), [{ label: 'Route', value: (r) => r.route }, { label: 'Fuel', value: (r) => money(r.fuel) }], 15)}`);
+console.log(`Top 15 routes by Fleet miles:\n${table([...fleetByRoute.routes].sort((a, b) => b.miles - a.miles), [{ label: 'Route', value: (r) => r.route }, { label: 'Miles', value: (r) => number(r.miles) }], 15)}`);
 
 printSection('6. Rate Table inspection');
+const rateTable = inspectGeneric(workbook, 'Rate Table');
 {
-  const { headers, rows } = inspectGeneric(workbook, 'Rate Table');
+  const { headers, rows } = rateTable;
   const looks = [];
   if (headers.some((h) => /route/i.test(h))) looks.push('route-based');
   if (headers.some((h) => /mile/i.test(h))) looks.push('mileage-based');
@@ -510,8 +730,22 @@ printSection('6. Rate Table inspection');
   console.log(`Looks like: ${looks.join(', ') || 'unclear'}`);
 }
 
+printSection('Rate Table raw grid inspection');
+const rateRaw = rateTableRawInspection(rateTable.rawRows);
+console.log(`Sheet dimensions: ${rateRaw.rowCount} row(s) x ${rateRaw.maxColumns} column(s); non-empty rows: ${rateRaw.nonEmptyCount}`);
+console.log(`First 60 non-empty rows, first 12 columns:\n${rateRaw.firstRows.join('\n') || '(none)'}`);
+console.log(`Section labels detected (first 30): ${rateRaw.labels.map((c) => `${c.address}=${c.text}`).join(' | ') || '(none)'}`);
+console.log(`Numeric values found (first 40): ${rateRaw.numericSample.map((c) => `${c.address}=${c.text}`).join(' | ') || '(none)'}`);
+console.log(`Possible mileage breakpoints (first 40): ${rateRaw.breakpoints.map((c) => `${c.address}=${c.text}`).join(' | ') || '(none)'}`);
+console.log(`Possible rate-per-mile values (first 40): ${rateRaw.rates.map((c) => `${c.address}=${c.text}`).join(' | ') || '(none)'}`);
+console.log(`Possible fuel surcharge rows:\n${rateRaw.fuelRows.join('\n') || '(none)'}`);
+console.log(`Possible 48-foot / trailer / equipment rows:\n${rateRaw.trailerRows.join('\n') || '(none)'}`);
+console.log(`Possible accessorial rows:\n${rateRaw.accessorialRows.join('\n') || '(none)'}`);
+
 printSection('7. Invoice Detail FY26 inspection');
 const invoice = inspectGeneric(workbook, 'Invoice Detail FY26');
+const invoiceRoutes = aggregateInvoiceByRoute(invoice.rows);
+const invoiceAqComparison = compareInvoiceToAq(routes, invoiceRoutes);
 console.log(`Headers: ${invoice.headers.filter(Boolean).join(' | ') || '(none detected)'}`);
 console.log(`Row count: ${invoice.rows.length}`);
 console.log(`Guessed row grain: ${inferGrain(invoice.headers, invoice.rows)}`);
@@ -522,6 +756,38 @@ console.log(`Route fields if available: ${classifyHeaders(invoice.headers, [/rou
 console.log(`Center fields if available: ${classifyHeaders(invoice.headers, [/center/i, /plasma/i, /stop/i])}`);
 console.log(`Date/invoice fields if available: ${classifyHeaders(invoice.headers, [/date/i, /invoice/i, /bol/i, /week/i, /month/i])}`);
 console.log(`Can join to Data base RFQ: ${invoice.headers.some((h) => /route|center|plasma|stop/i.test(h)) ? 'possibly, using detected route/center fields' : 'unclear from detected headers'}`);
+
+printSection('Invoice Detail FY26 route aggregation');
+console.log(table(invoiceRoutes, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'Rows', value: (r) => r.rows },
+  { label: 'BOLs', value: (r) => r.uniqueBolCount },
+  { label: 'Linehaul', value: (r) => money(r.linehaul) },
+  { label: 'Fuel', value: (r) => money(r.fuel) },
+  { label: 'BOL Total', value: (r) => money(r.bolTotal) },
+  { label: 'Cases', value: (r) => number(r.cases) },
+  { label: 'Liters', value: (r) => number(r.liters) },
+  { label: 'Miles', value: (r) => number(r.miles) },
+  { label: 'Rate Miles', value: (r) => number(r.rateMiles) },
+  { label: 'Avg $/mi', value: (r) => money(r.avgCostPerMile) },
+  { label: 'Fuel % total', value: (r) => pct(r.avgFuelPctOfTotal) },
+  { label: 'Fuel/linehaul', value: (r) => pct(r.impliedFuelPct) },
+  { label: 'Linehaul/rate mi', value: (r) => money(r.impliedLinehaulRatePerMile) },
+  { label: 'Total/rate mi', value: (r) => money(r.impliedTotalRatePerMile) }
+]));
+
+printSection('Invoice Detail FY26 vs Data base RFQ AQ comparison');
+console.log('Basis note: raw FY26 total, monthly average, and weekly average are not the same period basis as RFQ weekly AQ unless confirmed externally. Variances below are diagnostics only.');
+console.log(table(invoiceAqComparison, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'AQ/week', value: (r) => money(r.aq) },
+  { label: 'Invoice raw total', value: (r) => money(r.rawTotal) },
+  { label: 'Invoice monthly avg', value: (r) => money(r.monthlyAvg) },
+  { label: 'Invoice weekly avg', value: (r) => money(r.weeklyAvg) },
+  { label: 'Basis', value: (r) => r.basis },
+  { label: 'Var vs weekly AQ', value: (r) => r.weeklyAvg ? money(r.variance) : 'n/a' },
+  { label: 'Var %', value: (r) => r.variancePct === null ? 'n/a' : pct(r.variancePct) }
+]));
 
 printSection('8. Route-level summary from Data base RFQ');
 console.log(table(routes, [
@@ -541,17 +807,61 @@ console.log(table(routes, [
 ]));
 
 printSection('9. Candidate charge-model diagnostics');
-const diagnostics = modelDiagnostics(routes);
-const calculable = diagnostics.filter((d) => d.available && d.pct !== null);
-console.log(`Top 10 strongest matches:\n${table([...calculable].sort((a, b) => a.pct - b.pct), [{ label: 'Route', value: (d) => d.route }, { label: 'Model', value: (d) => d.model.replace('Model ', '') }, { label: 'Est', value: (d) => money(d.estimated) }, { label: 'AQ', value: (d) => money(d.aq) }, { label: 'Var', value: (d) => money(d.variance) }, { label: 'Var%', value: (d) => `${(d.pct * 100).toFixed(2)}%` }, { label: 'Quality', value: (d) => d.quality }], 10)}`);
-console.log(`Top 10 largest mismatches:\n${table([...calculable].sort((a, b) => b.pct - a.pct), [{ label: 'Route', value: (d) => d.route }, { label: 'Model', value: (d) => d.model.replace('Model ', '') }, { label: 'Est', value: (d) => money(d.estimated) }, { label: 'AQ', value: (d) => money(d.aq) }, { label: 'Var%', value: (d) => `${(d.pct * 100).toFixed(2)}%` }, { label: 'Quality', value: (d) => d.quality }], 10)}`);
-const byModel = groupBy(calculable, (d) => d.model);
-console.log('Model-level average absolute variance where calculable:');
-for (const [model, items] of byModel) {
-  const avg = items.reduce((sum, d) => sum + Math.abs(d.pct), 0) / items.length;
-  console.log(`  ${model}: ${(avg * 100).toFixed(2)}% over ${items.length} route(s)`);
-}
-console.log('Note: these diagnostics test field fit only; they do not confirm McKesson pricing logic.');
+console.log('A. RFQ summary reconciliation only, not pricing formula proof');
+const rfqRecon = routes.map((r) => {
+  const estimated = r.linehaul + r.fuelAmount + r.storage + r.other;
+  const variance = estimated - r.aq;
+  const variancePct = r.aq ? Math.abs(variance) / r.aq : null;
+  return { route: r.route, estimated, aq: r.aq, variance, variancePct, quality: matchQuality(variancePct) };
+});
+console.log(table(rfqRecon, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'Linehaul+fuel+accessorials', value: (r) => money(r.estimated) },
+  { label: 'AQ', value: (r) => money(r.aq) },
+  { label: 'Var', value: (r) => money(r.variance) },
+  { label: 'Var %', value: (r) => pct(r.variancePct) },
+  { label: 'Quality', value: (r) => r.quality }
+]));
+console.log('B. Raw invoice / rate table diagnostics');
+const invoiceDiagnosticRows = invoiceRoutes.map((r) => ({
+  route: r.route,
+  linehaulPerRateMile: r.impliedLinehaulRatePerMile,
+  fuelPct: r.impliedFuelPct,
+  totalPerRateMile: r.impliedTotalRatePerMile,
+  bolPerCase: r.cases ? r.bolTotal / r.cases : 0,
+  bolPerPallet: r.cases ? r.bolTotal / (r.cases / 70) : 0
+}));
+console.log(`Invoice route raw rate diagnostics:\n${table(invoiceDiagnosticRows, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'Linehaul/rate mi', value: (r) => money(r.linehaulPerRateMile) },
+  { label: 'Fuel/linehaul', value: (r) => pct(r.fuelPct) },
+  { label: 'BOL/rate mi', value: (r) => money(r.totalPerRateMile) },
+  { label: 'BOL/case', value: (r) => money(r.bolPerCase) },
+  { label: 'BOL/pallet', value: (r) => money(r.bolPerPallet) }
+])}`);
+const fleetRateRows = fleetByRoute.routes.map((r) => ({
+  route: r.route,
+  amountPerMile: r.miles ? r.amount / r.miles : 0,
+  amountPerCase: r.cases ? r.amount / r.cases : 0,
+  amountPerPallet: r.cases ? r.amount / (r.cases / 70) : 0,
+  fuelPct: r.amount ? r.fuel / r.amount : 0
+}));
+console.log(`Fleet Spend route raw rate diagnostics after center-route join:\n${table(fleetRateRows, [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'Amount/mile', value: (r) => money(r.amountPerMile) },
+  { label: 'Amount/case', value: (r) => money(r.amountPerCase) },
+  { label: 'Amount/pallet', value: (r) => money(r.amountPerPallet) },
+  { label: 'Fuel/amount', value: (r) => pct(r.fuelPct) }
+])}`);
+console.log(`Rate Table raw numeric candidates: breakpoints=${rateRaw.breakpoints.slice(0, 20).map((c) => `${c.address}:${c.text}`).join(', ') || '(none)'}; rates=${rateRaw.rates.slice(0, 20).map((c) => `${c.address}:${c.text}`).join(', ') || '(none)'}`);
+console.log(`Invoice weekly-average vs AQ strongest numeric reconciliations:\n${table([...invoiceAqComparison].filter((r) => r.variancePct !== null).sort((a, b) => a.variancePct - b.variancePct), [
+  { label: 'Route', value: (r) => r.route },
+  { label: 'AQ/week', value: (r) => money(r.aq) },
+  { label: 'Invoice weekly avg', value: (r) => money(r.weeklyAvg) },
+  { label: 'Var %', value: (r) => pct(r.variancePct) },
+  { label: 'Quality', value: (r) => matchQuality(r.variancePct) }
+], 10)}`);
+console.log('Strong match means numeric reconciliation only. It does not confirm McKesson’s pricing formula.');
 
 printSection('10. Recommended McKesson validation questions');
 [
