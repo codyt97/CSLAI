@@ -148,6 +148,11 @@
     .source-chip{border:1px solid #cbd5e1;background:#f8fafc;color:#334155;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900}
     .scenario-card{border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:12px;margin:12px 0;font-size:12px;line-height:1.42}
     .scenario-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.scenario-kpi{background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:8px}.scenario-kpi b{display:block;font-size:16px;color:#1d4ed8}
+    .pricing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+    .pricing-grid label{font-size:11px;font-weight:800;color:#334155}
+    .pricing-grid input{width:100%;border:1px solid #bfdbfe;border-radius:8px;padding:7px;font-size:12px;background:#fff;color:#0f172a}
+    .pricing-detail{background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:10px;margin:10px 0;white-space:normal}
+    .pricing-detail h3{font-size:13px;margin:0 0 6px;color:#0f172a}
 
     @media(max-width:900px){.app{grid-template-columns:1fr}aside{max-height:none;border-right:0;border-bottom:1px solid var(--border)}#map{min-height:600px}.topbar{flex-wrap:wrap}}
   
@@ -406,6 +411,38 @@ body.optimization-active aside{padding-bottom:34px;}
         <div id="aiOptimizerOutput" class="ai-output"><div class="ai-title">AI output will show here.</div>Select a route or analyze all routes. The API key stays on the server.</div>
       </div>
 
+      <div class="ai-optimizer-card">
+        <h2>AI Pricing Formula Investigator</h2>
+        <div><b>Directional Pricing Opportunity.</b> Requires McKesson Validation. Requires Contract/RFQ Validation.</div>
+        <div class="scenario-help">
+          <b>Market Benchmark Inputs:</b> no web-search/data-source integration for market pricing benchmarks exists in this app. Enter externally researched rates manually. External benchmark — requires sourcing validation.
+        </div>
+        <div class="pricing-grid">
+          <div><label for="pricingRatePerMile">Rate per mile</label><input id="pricingRatePerMile" type="number" min="0" step="0.01" value="3.34" /></div>
+          <div><label for="pricingBaseDispatchFee">Base dispatch fee</label><input id="pricingBaseDispatchFee" type="number" min="0" step="1" value="250" /></div>
+          <div><label for="pricingBaseRouteFee">Base route fee</label><input id="pricingBaseRouteFee" type="number" min="0" step="1" value="350" /></div>
+          <div><label for="pricingStopCharge">Stop charge</label><input id="pricingStopCharge" type="number" min="0" step="1" value="85" /></div>
+          <div><label for="pricingPalletCharge">Pallet charge</label><input id="pricingPalletCharge" type="number" min="0" step="1" value="48" /></div>
+          <div><label for="pricingFuelPrice">Fuel price</label><input id="pricingFuelPrice" type="number" min="0" step="0.01" value="3.70" /></div>
+          <div><label for="pricingMpg">MPG</label><input id="pricingMpg" type="number" min="0.1" step="0.1" value="6.2" /></div>
+          <div><label for="pricingDriverHourlyCost">Driver hourly cost</label><input id="pricingDriverHourlyCost" type="number" min="0" step="1" value="48" /></div>
+          <div><label for="pricingRefrigerationWeeklyCost">Refrigeration weekly cost</label><input id="pricingRefrigerationWeeklyCost" type="number" min="0" step="1" value="125" /></div>
+          <div><label for="pricingTollEstimate">Toll estimate</label><input id="pricingTollEstimate" type="number" min="0" step="1" value="0" /></div>
+          <div><label for="pricingRelaySurcharge">Relay surcharge</label><input id="pricingRelaySurcharge" type="number" min="0" step="1" value="250" /></div>
+          <div><label for="pricingMinimumRouteCharge">Minimum route charge</label><input id="pricingMinimumRouteCharge" type="number" min="0" step="1" value="550" /></div>
+          <div><label for="pricingNonRoutinePickupFee">Non-routine pickup fee</label><input id="pricingNonRoutinePickupFee" type="number" min="0" step="1" value="0" /></div>
+          <div><label for="pricingDetentionWaitTime">Detention / wait time</label><input id="pricingDetentionWaitTime" type="number" min="0" step="1" value="0" /></div>
+          <div><label for="pricingWeekendHolidayPickupCharge">Weekend / holiday pickup</label><input id="pricingWeekendHolidayPickupCharge" type="number" min="0" step="1" value="0" /></div>
+          <div><label for="pricingVehicleFixedCost">Vehicle fixed cost</label><input id="pricingVehicleFixedCost" type="number" min="0" step="1" value="450" /></div>
+          <div><label for="pricingVehicleCostPerMile">Vehicle cost per mile</label><input id="pricingVehicleCostPerMile" type="number" min="0" step="0.01" value="1.45" /></div>
+          <div><label for="pricingDriverHoursOverride">Driver hours override</label><input id="pricingDriverHoursOverride" type="number" min="0" step="0.1" value="0" /></div>
+        </div>
+        <div class="button-row">
+          <button class="action primary" id="pricingRun" type="button">Evaluate Pricing Formulas</button>
+        </div>
+        <div id="pricingFormulaOutput" class="ai-output"><div class="ai-title">Pricing formulas will show here.</div>Run the investigator to compare current McKesson-style pricing against alternative directional formulas.</div>
+      </div>
+
       <div class="button-row">
         <button class="action primary" id="optApplyScenario" type="button">Send Route Plan to Playground</button>
         <button class="action primary" id="optLoadActualRoutes" type="button">Load Actual Optimization Routes</button>
@@ -583,9 +620,9 @@ const ACTIVE_RFQ_BASELINE = {
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
   annualCost: 17472545.31,
-  weeklyCases: 35245.38,
-  weeklyLiters: 406352.55,
-  weeklyMiles: 222420.94,
+  weeklyCases: 35439.52,
+  weeklyLiters: 408533.22,
+  weeklyMiles: 40429.02,
   casesPerPallet: 70,
   trailerMaxPallets: 24,
   rawSourceReconciliationWeeklyCost: 381925.48
@@ -1686,7 +1723,7 @@ function updateScenarioSummary(rows, summaries){
   const currentCost=summaries.reduce((s,r)=>s+r.currentCost,0), newCost=summaries.reduce((s,r)=>s+r.newCost,0);
   const rates=getScenarioRates();
   const method = rates.pricingMethod === 'commodity' ? 'Rate Table mileage commodity matrix' : rates.pricingMethod === 'simple' ? 'simple $/mile override' : `Rate Table dedicated $/mile (${money2(DATA.rateTable?.dedicatedTransportationRatePerMile || 0)}/mile)`;
-  $('plcSummary').innerHTML = `<b>Scenario summary</b><br/>Routes created: <b>${fmt0(summaries.length)}</b> · Centers reassigned: <b>${fmt0(totalStops)}</b><br/>Full Scheduled Source Route Miles: <b>${fmtMiles(currentMiles)}</b> · Scenario Routed Miles: <b>${fmtMiles(newMiles)}</b> · Mileage Delta: <b>Validate</b><br/>Current linehaul: <b>${money2(currentLinehaul)}</b> → New linehaul: <b>${money2(newLinehaul)}</b> · Δ ${fmtDelta(newLinehaul-currentLinehaul,'money')}<br/>Current fuel: <b>${money2(currentFuel)}</b> → New fuel: <b>${money2(newFuel)}</b> · Δ ${fmtDelta(newFuel-currentFuel,'money')}<br/>Current cost: <b>${money2(currentCost)}</b> → New estimated cost: <b>${money2(newCost)}</b> · Δ ${fmtDelta(newCost-currentCost,'money')}<div class="mini-note">Current values use Active RFQ Baseline rows; route summary miles include route origin to first stop and last stop to destination PLC when those points are available. Scenario routed miles and savings are directional estimates requiring validation. New scenario pricing method: <b>${method}</b>. Fuel uses <b>${(rates.fuelPct*100).toFixed(2)}%</b>, seeded from the workbook average fuel surcharge. Rate Table source: <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>.</div>`;
+  $('plcSummary').innerHTML = `<b>Scenario summary</b><br/>Routes created: <b>${fmt0(summaries.length)}</b> · Centers reassigned: <b>${fmt0(totalStops)}</b><br/>Full Scheduled Source Route Miles: <b>${fmtMiles(currentMiles)}</b> · Scenario Routed Miles: <b>${fmtMiles(newMiles)}</b> · Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Current linehaul: <b>${money2(currentLinehaul)}</b> → New linehaul: <b>${money2(newLinehaul)}</b> · Δ ${fmtDelta(newLinehaul-currentLinehaul,'money')}<br/>Current fuel: <b>${money2(currentFuel)}</b> → New fuel: <b>${money2(newFuel)}</b> · Δ ${fmtDelta(newFuel-currentFuel,'money')}<br/>Current cost: <b>${money2(currentCost)}</b> → New estimated cost: <b>${money2(newCost)}</b> · Δ ${fmtDelta(newCost-currentCost,'money')}<div class="mini-note">Current values use Active RFQ Baseline rows; route summary miles include route origin to first stop and last stop to destination PLC when those points are available. Scenario routed miles and savings are directional estimates requiring validation. New scenario pricing method: <b>${method}</b>. Fuel uses <b>${(rates.fuelPct*100).toFixed(2)}%</b>, seeded from the workbook average fuel surcharge. Rate Table source: <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>.</div>`;
 }
 function refreshPlayground(){
   clearAnimation();
@@ -2025,11 +2062,11 @@ function updateOptimizationKpis(rows){
 function updateOptimizationTable(rows, mode){
   const table = $('resultsTable');
   if(mode === 'sequence'){
-    table.innerHTML = `<thead><tr><th>Route</th><th>Recommended Design</th><th>New Route Name(s)</th><th>Current Endpoint PLC(s)</th><th>Proposed Endpoint PLC(s)</th><th>Stops</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Estimated Mile Reduction</th><th>Suggested Stop Order</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.recommendationType}</td><td>${r.newRouteText}</td><td>${r.currentPLCText}</td><td>${r.recommendedPLCText}</td><td>${fmt0(r.stopCount)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td><b>Validate</b></td><td>${r.stopOrderText || 'No coordinate sequence available'}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="11">No matching route sequence opportunities.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Route</th><th>Recommended Design</th><th>New Route Name(s)</th><th>Current Endpoint PLC(s)</th><th>Proposed Endpoint PLC(s)</th><th>Stops</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Estimated Mile Reduction</th><th>Suggested Stop Order</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.recommendationType}</td><td>${r.newRouteText}</td><td>${r.currentPLCText}</td><td>${r.recommendedPLCText}</td><td>${fmt0(r.stopCount)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td><b>Directional estimate — mileage basis differs and requires validation</b></td><td>${r.stopOrderText || 'No coordinate sequence available'}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="11">No matching route sequence opportunities.</td></tr>'}</tbody>`;
   } else if(mode === 'routes'){
     table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Current Linehaul</th><th>New Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Current Total</th><th>New Total</th><th>Weekly Savings</th><th>Annual Savings</th><th>Rate Source</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(r.currentLinehaul)}</td><td>${money2(r.newLinehaul)}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${r.rateDetail}</td></tr>`).join('') || '<tr><td colspan="18">No matching route opportunities.</td></tr>'}</tbody>`;
   } else {
-    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Directional estimate — mileage basis differs and requires validation'}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
   }
 }
 function refreshOptimization(){
@@ -2084,7 +2121,7 @@ function refreshOptimization(){
   const fuelSavings = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
   const relay = rows.filter(r=>r.isRelay).length;
-  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Validate</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Estimated annual opportunity: <b>${money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Opportunities are route-level: full scheduled source route miles vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
+  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Estimated annual opportunity: <b>${money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Opportunities are route-level: full scheduled source route miles vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
   $('mapTitle').textContent = `Route Optimization Engine: ${mode === 'routes' ? 'Route Summary' : mode === 'sequence' ? 'Stop Sequence' : 'Route Rebuild Recommendations'}`;
   $('visiblePill').textContent = `${fmt0(rows.length)} route groups`;
   if(bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:6});
@@ -2104,7 +2141,7 @@ function exportOptimizationCsv(){
   const header=['Current Route Name','Current Endpoint PLC(s)','Recommended Route Design','Proposed Route Name(s)','States','Stops','Week Pattern','Cases Weekly','Liters Weekly','Pallets Weekly','Full Scheduled Source Route Miles','Scenario Routed Miles','Mileage Delta','Current Linehaul','New Linehaul','Current Fuel','New Fuel','Fuel Saved','Current Total Cost','New Total Cost','Weekly Opportunity','Annual Opportunity','Current Cost Per Case','New Cost Per Case','Rate Source','Rate Detail','Validation Note','Suggested Stop Order'];
   const lines=[header.join(',')];
   for(const r of rows){
-    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),formatFullScheduledRouteMiles(r.route, selectedScheduleWeek()),fmt1(r.newMiles),'Validate',fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
+    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),formatFullScheduledRouteMiles(r.route, selectedScheduleWeek()),fmt1(r.newMiles),'Directional estimate — mileage basis differs and requires validation',fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
     lines.push(vals.map(v=>`"${String(v ?? '').replaceAll('"','""')}"`).join(','));
   }
   const blob=new Blob([lines.join('\n')], {type:'text/csv'});
@@ -2424,6 +2461,7 @@ if($('tabAiAssistant')) $('tabAiAssistant').addEventListener('click', ()=>setVie
 if($('tabMaxSavings')) $('tabMaxSavings').addEventListener('click', ()=>setView('maxSavings'));
 if($('tabRfqReadiness')) $('tabRfqReadiness').addEventListener('click', ()=>setView('rfqReadiness'));
 if($('loadMaxSavingsScenario')) $('loadMaxSavingsScenario').addEventListener('click', loadMaxSavingsScenario);
+if($('pricingRun')) $('pricingRun').addEventListener('click', loadMaxSavingsScenario);
 if($('maxSavingsMapMode')) $('maxSavingsMapMode').addEventListener('change', drawMaxSavingsScenarioMap);
 if($('previewScenarioBrief')) $('previewScenarioBrief').addEventListener('click', openScenarioBrief);
 if($('exportScenarioPdf')) $('exportScenarioPdf').addEventListener('click', openScenarioBrief);
@@ -2870,7 +2908,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(!r) return 'Not started';
     const actual = (r.segments||[]).some(s=>String(s.routeBasis||'').toLowerCase().includes('actual'));
     if(actual) return 'High · actual truck route loaded';
-    if(r.currentMiles && r.newMiles) return 'Medium · Full Scheduled Source Route Miles + Scenario Routed Miles; Mileage Delta requires validation';
+    if(r.currentMiles && r.newMiles) return 'Medium · Full Scheduled Source Route Miles + Scenario Routed Miles; Directional estimate — mileage basis differs and requires validation';
     return 'Low · missing route or cost detail';
   }
   function trailerLoadText(pallets){
@@ -3016,7 +3054,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       return;
     }
     if(!selected && window.codyOptShowAllRoutes){
-      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
+      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Directional estimate — mileage basis differs and requires validation'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
       return;
     }
     const chunks = rows.map(r=>{
@@ -3586,7 +3624,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     }
     return {mileageBasisStatus:'Comparable', isMileageComparable:true, mileageDelta:currentSourceMiles - proposedScenarioMiles, mileageWarningText:''};
   }
-  function formatMileageDelta(k){ return k?.isMileageComparable ? fmtDelta(-k.mileageDelta).replace('+','') : (k?.mileageBasisStatus === 'Missing Data' ? 'Missing Data' : 'Validate'); }
+  function formatMileageDelta(k){ return k?.isMileageComparable ? fmtDelta(-k.mileageDelta).replace('+','') : (k?.mileageBasisStatus === 'Missing Data' ? 'Missing Data' : 'Directional estimate — mileage basis differs and requires validation'); }
   function guardedCostPerCase(value, currentWeeklyCost, annualOpportunity, routeName){
     if(value === null || value === undefined || !Number.isFinite(Number(value))) return null;
     const v = Number(value);
@@ -3946,6 +3984,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
 
 
 let lastMaxSavingsScenario=null;
+let lastPricingFormulaInvestigator=null;
 let lastRfqReadiness=null;
 function moneyScenario(v){ return Number(v||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}); }
 function numberScenario(v){ return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
@@ -3954,15 +3993,90 @@ function refreshMaxSavingsView(){
   if(!lastMaxSavingsScenario) loadMaxSavingsScenario(); else drawMaxSavingsScenarioMap();
 }
 function scenarioTableRows(items, cols){ return (items||[]).map(item=>`<tr>${cols.map(c=>`<td>${esc2(typeof c==='function'?c(item):item[c])}</td>`).join('')}</tr>`).join(''); }
+function pricingAssumptionParams(){
+  const ids={
+    ratePerMile:'pricingRatePerMile',
+    baseDispatchFee:'pricingBaseDispatchFee',
+    baseRouteFee:'pricingBaseRouteFee',
+    stopCharge:'pricingStopCharge',
+    palletCharge:'pricingPalletCharge',
+    fuelPrice:'pricingFuelPrice',
+    mpg:'pricingMpg',
+    driverHourlyCost:'pricingDriverHourlyCost',
+    refrigerationWeeklyCost:'pricingRefrigerationWeeklyCost',
+    tollEstimate:'pricingTollEstimate',
+    relaySurcharge:'pricingRelaySurcharge',
+    minimumRouteCharge:'pricingMinimumRouteCharge',
+    nonRoutinePickupFee:'pricingNonRoutinePickupFee',
+    detentionWaitTime:'pricingDetentionWaitTime',
+    weekendHolidayPickupCharge:'pricingWeekendHolidayPickupCharge',
+    vehicleFixedCost:'pricingVehicleFixedCost',
+    vehicleCostPerMile:'pricingVehicleCostPerMile',
+    driverHoursOverride:'pricingDriverHoursOverride'
+  };
+  const params=new URLSearchParams();
+  Object.entries(ids).forEach(([key,id])=>{ const el=$(id); if(el) params.set(`pricing_${key}`, el.value || '0'); });
+  return params;
+}
 async function loadMaxSavingsScenario(){
   const out=$('maxSavingsOutput'); if(out) out.innerHTML='<div class="ai-title">Building max savings scenario...</div>';
   const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization';
-  const res=await fetch(`/api/max-savings-scenario?mode=${encodeURIComponent(mode)}`); const json=await res.json();
-  lastMaxSavingsScenario=json.selected; renderMaxSavingsScenario(json.selected); drawMaxSavingsScenarioMap();
+  const params=pricingAssumptionParams(); params.set('mode', mode);
+  const res=await fetch(`/api/max-savings-scenario?${params.toString()}`); const json=await res.json();
+  lastMaxSavingsScenario=json.selected; lastPricingFormulaInvestigator=json.pricingFormulaInvestigator;
+  renderMaxSavingsScenario(json.selected); renderPricingFormulaInvestigator(json.pricingFormulaInvestigator); drawMaxSavingsScenarioMap();
 }
 function renderMaxSavingsScenario(s){
   const out=$('maxSavingsOutput'); if(!out||!s) return;
-  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Proposed miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Scenario Routed Miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+}
+function renderPricingFormulaInvestigator(p){
+  const out=$('pricingFormulaOutput'); if(!out) return;
+  if(!p){ out.innerHTML='<div class="ai-title">Pricing formulas will show here.</div>Run the investigator to compare current McKesson-style pricing against alternative directional formulas.'; return; }
+  const rows=(p.rows||[]).slice(0,40);
+  const tableRows=rows.map((r,idx)=>`<tr>
+    <td><button class="action" type="button" onclick="showPricingDetail(${idx})">${esc2(r.route)}</button></td>
+    <td>${esc2(r.currentPricingModel)}</td>
+    <td>${esc2(r.proposedPricingFormula)}</td>
+    <td>${moneyScenario(r.currentWeeklyCost)}</td>
+    <td>${moneyScenario(r.proposedWeeklyCost)}</td>
+    <td>${moneyScenario(r.weeklyOpportunity)}</td>
+    <td>${moneyScenario(r.annualOpportunity)}</td>
+    <td>${numberScenario(r.miles)}</td>
+    <td>${numberScenario(r.stops)}</td>
+    <td>${numberScenario(r.pallets)}</td>
+    <td>${esc2(r.vehicleAssumption)}</td>
+    <td>${numberScenario(r.mpgAssumption)}</td>
+    <td>${moneyScenario(r.fuelCostEstimate)}</td>
+    <td>${esc2(r.validationRequired)}</td>
+    <td>${esc2(r.recommendation)}</td>
+  </tr>`).join('');
+  out.innerHTML=`
+    <div class="ai-title">${esc2(p.title || 'AI Pricing Formula Investigator')}</div>
+    <div><b>Directional Pricing Opportunity</b> · Requires McKesson Validation · Requires Contract/RFQ Validation</div>
+    <div><b>Benchmark mode:</b> ${esc2(p.benchmarkInputMode || 'Market Benchmark Inputs')} · ${esc2(p.benchmarkSourceStatus || '')}</div>
+    <div><b>Pricing formulas added:</b> ${esc2((p.formulasEvaluated||[]).join('; '))}</div>
+    <table><thead><tr><th>Route</th><th>Current Pricing Model</th><th>Proposed Pricing Formula</th><th>Current Weekly Cost</th><th>Proposed Weekly Cost</th><th>Weekly Opportunity</th><th>Annual Opportunity</th><th>Miles</th><th>Stops</th><th>Pallets</th><th>Vehicle Assumption</th><th>MPG Assumption</th><th>Fuel Cost Estimate</th><th>Validation Required</th><th>Recommendation</th></tr></thead><tbody>${tableRows || '<tr><td colspan="15">No pricing formula recommendations returned.</td></tr>'}</tbody></table>
+    <div id="pricingFormulaDetail" class="pricing-detail"><h3>Recommendation Details</h3>Select a route in the table to view formula breakdown, inputs, missing data, validation asks, and RFQ request language.</div>
+    <div class="mini-note">${esc2(p.sourceNote || 'Directional Pricing Opportunity only. Requires validation.')}</div>
+  `;
+}
+function showPricingDetail(index){
+  const detail=$('pricingFormulaDetail'); const r=lastPricingFormulaInvestigator?.details?.[index];
+  if(!detail||!r) return;
+  const list=(items)=>`<ul>${(items||[]).map(x=>`<li>${esc2(x)}</li>`).join('') || '<li>None listed</li>'}</ul>`;
+  detail.innerHTML=`
+    <h3>${esc2(r.route)} · ${esc2(r.proposedPricingFormula)}</h3>
+    <div><b>Formula used:</b> ${esc2(r.formulaUsed)}</div>
+    <div><b>Calculation breakdown:</b>${list(r.calculationBreakdown)}</div>
+    <div><b>Inputs used:</b> Current weekly cost ${moneyScenario(r.inputsUsed?.currentWeeklyCost)}, linehaul ${moneyScenario(r.inputsUsed?.linehaul)}, fuel surcharge ${moneyScenario(r.inputsUsed?.fuelSurcharge)}, route/stop cost ${moneyScenario(r.inputsUsed?.routeStopCost)}, relay/shuttle ${moneyScenario(r.inputsUsed?.relayShuttleCharge)}</div>
+    <div><b>Missing inputs:</b>${list(r.missingData)}</div>
+    <div><b>Why this formula may be better:</b> ${esc2(r.whyThisFormulaMayBeBetter)}</div>
+    <div><b>What McKesson/carrier must validate:</b>${list(r.mckessonCarrierValidation)}</div>
+    <div><b>What CSL should request in RFQ:</b>${list(r.cslRfqRequest)}</div>
+    <div><b>Validation required:</b> ${esc2(r.validationRequired)}</div>
+    <div><b>Risk level:</b> ${esc2(r.riskLevel)}</div>
+  `;
 }
 function drawMaxSavingsScenarioMap(){
   if(!lastMaxSavingsScenario||!lineLayer) return;

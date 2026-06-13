@@ -66,7 +66,7 @@ export async function runAiRouteOptimizer(input) {
     ],
     routeGroups: groups.map(g => ({
       routeName: g.routeName, stopCount: g.stopCount, currentEndpointPLC: g.currentEndpointPLC, routeType: g.routeType,
-      weeklyCases: g.weeklyCases, weeklyPallets: g.weeklyPallets, workbookMiles: g.workbookMiles,
+      weeklyCases: g.weeklyCases, weeklyPallets: palletsFromCases(g.weeklyCases), workbookMiles: g.workbookMiles,
       workbookFuel: g.workbookFuel, workbookTotalCost: g.workbookTotalCost, isRelay: g.isRelay, pickupDays: g.pickupDays,
       stops: g.stops.map((s,i)=>({ stop:i+1, id:s.id, name:s.routeName, centerNumber:s.centerNumber, city:s.city, state:s.state, basePLC:s.basePLC, actualPLC:s.actualPLC }))
     })),
@@ -137,6 +137,29 @@ const SCENARIO_TYPES = {
   MAX: 'Max Savings Optimization'
 };
 
+const DEFAULT_PRICING_ASSUMPTIONS = {
+  ratePerMile: 3.34,
+  baseDispatchFee: 250,
+  baseRouteFee: 350,
+  stopCharge: 85,
+  palletCharge: 48,
+  fuelPrice: 3.7,
+  mpg: 6.2,
+  driverHourlyCost: 48,
+  refrigerationWeeklyCost: 125,
+  tollEstimate: 0,
+  relaySurcharge: 250,
+  minimumRouteCharge: 550,
+  nonRoutinePickupFee: 0,
+  detentionWaitTime: 0,
+  weekendHolidayPickupCharge: 0,
+  vehicleFixedCost: 450,
+  vehicleCostPerMile: 1.45,
+  driverHoursOverride: 0
+};
+
+const PRICING_VALIDATION_REQUIRED = 'Requires McKesson Validation; Requires Contract/RFQ Validation';
+
 function roundScenario(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round((Number(value) || 0) * factor) / factor;
@@ -144,6 +167,198 @@ function roundScenario(value, digits = 2) {
 
 function sumScenario(values) {
   return (values || []).reduce((total, value) => total + (Number(value) || 0), 0);
+}
+
+function palletsFromCases(cases = 0) {
+  return (Number(cases) || 0) / ASSUMPTIONS.casesPerPallet;
+}
+
+function routePallets(route = {}) {
+  return palletsFromCases(route.weeklyCases);
+}
+
+function normalizePricingAssumptions(input = {}) {
+  return Object.fromEntries(Object.entries(DEFAULT_PRICING_ASSUMPTIONS).map(([key, defaultValue]) => {
+    const value = Number(input[key]);
+    return [key, Number.isFinite(value) ? value : defaultValue];
+  }));
+}
+
+function currentPricingBreakdown(route) {
+  const currentWeeklyCost = Number(route.weeklyCost ?? route.workbookTotalCost ?? 0);
+  const linehaul = Number(route.linehaulCost ?? route.workbookLinehaul ?? 0);
+  const fuelSurcharge = Number(route.fuelCost ?? route.workbookFuel ?? Math.max(0, currentWeeklyCost - linehaul));
+  const relayShuttleCharge = route.isRelay || route.plcMismatch ? 0 : 0;
+  const routeStopCost = Math.max(0, currentWeeklyCost - linehaul - fuelSurcharge - relayShuttleCharge);
+  return {
+    formulaName: 'Current McKesson-style model',
+    total: roundScenario(currentWeeklyCost),
+    linehaul: roundScenario(linehaul),
+    fuelSurcharge: roundScenario(fuelSurcharge),
+    routeStopCost: roundScenario(routeStopCost),
+    relayShuttleCharge: roundScenario(relayShuttleCharge),
+    missingInputs: ['Contract rate basis', 'Accessorial detail by route', 'Relay/shuttle charge detail when applicable'].filter((item) => item.includes('Relay') ? (route.isRelay || route.plcMismatch) : true),
+    breakdown: [
+      `Current weekly route cost from workbook/runtime billing: ${roundScenario(currentWeeklyCost)}`,
+      `Linehaul component: ${roundScenario(linehaul)}`,
+      `Fuel surcharge component: ${roundScenario(fuelSurcharge)}`,
+      `Route/stop or other charge component: ${roundScenario(routeStopCost)}`,
+      `Relay/shuttle charge available in current data: ${relayShuttleCharge ? roundScenario(relayShuttleCharge) : 'not itemized'}`
+    ]
+  };
+}
+
+function fuelCostEstimate(miles, assumptions) {
+  const mpg = Math.max(0.1, Number(assumptions.mpg) || DEFAULT_PRICING_ASSUMPTIONS.mpg);
+  return roundScenario((Number(miles) || 0) / mpg * (Number(assumptions.fuelPrice) || 0));
+}
+
+function priceFormulaCandidates(route, assumptions = DEFAULT_PRICING_ASSUMPTIONS) {
+  const miles = Number(route.weeklyMiles ?? route.currentPathMiles ?? route.workbookMiles ?? 0);
+  const stops = Number(route.stopCount || route.stops?.length || 0);
+  const pallets = routePallets(route);
+  const driverHours = Number(assumptions.driverHoursOverride) > 0 ? Number(assumptions.driverHoursOverride) : calculateDriverHours(miles);
+  const fsc = fuelCostEstimate(miles, assumptions);
+  const relay = route.isRelay || route.plcMismatch ? Number(assumptions.relaySurcharge) || 0 : 0;
+  const accessorials = {
+    nonRoutinePickupFee: Number(assumptions.nonRoutinePickupFee) || 0,
+    relayShuttleSurcharge: relay,
+    detentionWaitTime: Number(assumptions.detentionWaitTime) || 0,
+    tolls: Number(assumptions.tollEstimate) || 0,
+    refrigerationCharge: Number(assumptions.refrigerationWeeklyCost) || 0,
+    weekendHolidayPickupCharge: Number(assumptions.weekendHolidayPickupCharge) || 0
+  };
+  const accessorialTotal = sumScenario(Object.values(accessorials));
+  const withMinimum = (subtotal) => roundScenario(Math.max(Number(assumptions.minimumRouteCharge) || 0, subtotal));
+  const models = [
+    {
+      formulaName: 'Mileage-based model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.baseDispatchFee) || 0) + miles * (Number(assumptions.ratePerMile) || 0) + fsc + (Number(assumptions.tollEstimate) || 0)),
+      keyAssumptionUsed: `Base dispatch fee ${roundScenario(assumptions.baseDispatchFee)} + ${roundScenario(assumptions.ratePerMile)} per loaded mile`,
+      formulaUsed: 'base dispatch fee + loaded miles x rate per mile + fuel surcharge + tolls',
+      calculationBreakdown: [`${roundScenario(assumptions.baseDispatchFee)} base dispatch fee`, `${roundScenario(miles)} loaded miles x ${roundScenario(assumptions.ratePerMile)} per mile`, `${fsc} fuel cost estimate`, `${roundScenario(assumptions.tollEstimate)} toll estimate`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit when CSL wants the rate basis tied to loaded route miles and transparent fuel/toll treatment.'
+    },
+    {
+      formulaName: 'Stop-based model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.baseRouteFee) || 0) + stops * (Number(assumptions.stopCharge) || 0) + fsc),
+      keyAssumptionUsed: `Base route fee ${roundScenario(assumptions.baseRouteFee)} + ${roundScenario(assumptions.stopCharge)} per stop`,
+      formulaUsed: 'base route fee + stop count x stop charge + fuel surcharge',
+      calculationBreakdown: [`${roundScenario(assumptions.baseRouteFee)} base route fee`, `${stops} stops x ${roundScenario(assumptions.stopCharge)} stop charge`, `${fsc} fuel cost estimate`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit for dense multi-stop milk-run routes where stop complexity matters more than mileage.'
+    },
+    {
+      formulaName: 'Hybrid route model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.baseRouteFee) || 0) + miles * (Number(assumptions.ratePerMile) || 0) + stops * (Number(assumptions.stopCharge) || 0) + fsc + (Number(assumptions.refrigerationWeeklyCost) || 0)),
+      keyAssumptionUsed: `${roundScenario(assumptions.ratePerMile)} per mile + ${roundScenario(assumptions.stopCharge)} per stop + reefer weekly cost`,
+      formulaUsed: 'base route fee + loaded miles x rate per mile + stop count x stop charge + fuel surcharge + refrigeration charge',
+      calculationBreakdown: [`${roundScenario(assumptions.baseRouteFee)} base route fee`, `${roundScenario(miles)} miles x ${roundScenario(assumptions.ratePerMile)} per mile`, `${stops} stops x ${roundScenario(assumptions.stopCharge)} stop charge`, `${fsc} fuel cost estimate`, `${roundScenario(assumptions.refrigerationWeeklyCost)} refrigeration weekly cost`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit when CSL wants to separate fixed route coverage, mileage, stop work, fuel, and refrigeration.'
+    },
+    {
+      formulaName: 'Pallet/utilization model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.baseRouteFee) || 0) + pallets * (Number(assumptions.palletCharge) || 0) + miles * (Number(assumptions.ratePerMile) || 0) + fsc),
+      keyAssumptionUsed: `${roundScenario(assumptions.palletCharge)} per pallet with pallets = cases / 70`,
+      formulaUsed: 'base route fee + pallets x pallet charge + mileage charge + fuel surcharge',
+      calculationBreakdown: [`${roundScenario(assumptions.baseRouteFee)} base route fee`, `${roundScenario(pallets)} pallets x ${roundScenario(assumptions.palletCharge)} pallet charge`, `${roundScenario(miles)} miles x ${roundScenario(assumptions.ratePerMile)} per mile`, `${fsc} fuel cost estimate`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit when CSL wants price pressure connected to trailer utilization and the 48 ft reefer 24-pallet default.'
+    },
+    {
+      formulaName: 'Vehicle-based model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.vehicleFixedCost) || 0) + miles * (Number(assumptions.vehicleCostPerMile) || 0) + driverHours * (Number(assumptions.driverHourlyCost) || 0) + fsc + (Number(assumptions.refrigerationWeeklyCost) || 0)),
+      keyAssumptionUsed: `${roundScenario(assumptions.vehicleFixedCost)} vehicle fixed cost + ${roundScenario(assumptions.driverHourlyCost)} driver hourly cost`,
+      formulaUsed: 'vehicle fixed cost + miles x vehicle cost per mile + driver hours x driver hourly cost + fuel cost + refrigeration cost',
+      calculationBreakdown: [`${roundScenario(assumptions.vehicleFixedCost)} vehicle fixed cost`, `${roundScenario(miles)} miles x ${roundScenario(assumptions.vehicleCostPerMile)} vehicle cost per mile`, `${roundScenario(driverHours)} driver hours x ${roundScenario(assumptions.driverHourlyCost)} driver hourly cost`, `${fsc} fuel cost estimate`, `${roundScenario(assumptions.refrigerationWeeklyCost)} refrigeration weekly cost`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit when CSL wants an operating-cost style negotiation anchor for equipment, driver time, fuel, and refrigeration.'
+    },
+    {
+      formulaName: 'Accessorial model',
+      proposedWeeklyCost: withMinimum((Number(assumptions.baseRouteFee) || 0) + miles * (Number(assumptions.ratePerMile) || 0) + fsc + accessorialTotal),
+      keyAssumptionUsed: `Accessorial total ${roundScenario(accessorialTotal)} including relay, toll, detention, refrigeration, and special pickup inputs`,
+      formulaUsed: 'base mileage formula plus non-routine pickup, relay/shuttle, detention/wait time, tolls, refrigeration, minimum route, and weekend/holiday charges',
+      calculationBreakdown: [`${roundScenario(assumptions.baseRouteFee)} base route fee`, `${roundScenario(miles)} miles x ${roundScenario(assumptions.ratePerMile)} per mile`, `${fsc} fuel cost estimate`, `${roundScenario(accessorialTotal)} accessorial inputs`, `${roundScenario(assumptions.minimumRouteCharge)} minimum route charge floor`],
+      whyBetter: 'Best directional fit when CSL needs explicit itemization and caps for charges that may be buried in current pricing.'
+    }
+  ];
+  return models.map((model) => ({ ...model, fuelCostEstimate: fsc, accessorials }));
+}
+
+export function buildPricingFormulaInvestigator({ assumptions = {}, limit = 60 } = {}) {
+  const normalized = normalizePricingAssumptions(assumptions);
+  const routes = buildCurrentNetworkBaseline().routeGroups;
+  const rows = routes.map((route) => {
+    const current = currentPricingBreakdown(route);
+    const candidates = priceFormulaCandidates(route, normalized);
+    const ranked = candidates.map((candidate) => {
+      const weeklyOpportunity = roundScenario(current.total - candidate.proposedWeeklyCost);
+      const missingInputs = [
+        ...current.missingInputs,
+        !route.weeklyMiles && 'Validated loaded miles',
+        !route.stopCount && 'Stop count',
+        !(Number(route.weeklyCases) > 0) && 'Weekly cases needed to calculate pallets as cases / 70',
+        'Carrier-confirmed fuel surcharge formula',
+        'Carrier-confirmed accessorial schedule',
+        'Contract minimum charge rules'
+      ].filter(Boolean);
+      const riskLevel = route.isRelay || route.plcMismatch || missingInputs.length > 5 ? 'High' : weeklyOpportunity > 0 ? 'Medium' : 'Low';
+      return {
+        route: route.routeName,
+        currentPricingModel: current.formulaName,
+        proposedPricingFormula: candidate.formulaName,
+        currentWeeklyCost: current.total,
+        proposedWeeklyCost: candidate.proposedWeeklyCost,
+        weeklyOpportunity,
+        annualOpportunity: roundScenario(weeklyOpportunity * 52),
+        miles: roundScenario(route.weeklyMiles ?? route.currentPathMiles ?? route.workbookMiles ?? 0),
+        stops: route.stopCount || route.stops?.length || 0,
+        pallets: roundScenario(routePallets(route)),
+        vehicleAssumption: `48 ft reefer default = ${ASSUMPTIONS.reefer48FootMaxPallets} pallets`,
+        mpgAssumption: normalized.mpg,
+        fuelCostEstimate: candidate.fuelCostEstimate,
+        keyAssumptionUsed: candidate.keyAssumptionUsed,
+        missingData: [...new Set(missingInputs)],
+        validationRequired: PRICING_VALIDATION_REQUIRED,
+        riskLevel,
+        recommendation: weeklyOpportunity > 0
+          ? `Directional Pricing Opportunity: negotiate ${candidate.formulaName}; Requires McKesson Validation; Requires Contract/RFQ Validation.`
+          : `No positive directional pricing opportunity under current assumptions; use ${candidate.formulaName} as RFQ benchmark only.`,
+        formulaUsed: candidate.formulaUsed,
+        calculationBreakdown: candidate.calculationBreakdown,
+        inputsUsed: {
+          currentWeeklyCost: current.total,
+          linehaul: current.linehaul,
+          fuelSurcharge: current.fuelSurcharge,
+          routeStopCost: current.routeStopCost,
+          relayShuttleCharge: current.relayShuttleCharge,
+          assumptions: normalized
+        },
+        whyThisFormulaMayBeBetter: candidate.whyBetter,
+        mckessonCarrierValidation: [
+          'Validate current linehaul, fuel surcharge, route/stop cost, relay/shuttle, and accessorial components.',
+          'Validate loaded miles, billable mileage source, stop count, tolls, detention, refrigeration, and minimum charge rules.',
+          'Validate whether proposed formula can be contracted at route, lane, or network level.'
+        ],
+        cslRfqRequest: [
+          'Request itemized current weekly route cost by linehaul, fuel surcharge, stop/route fee, relay/shuttle, detention, tolls, refrigeration, and minimums.',
+          'Request bids for mileage-based, stop-based, hybrid, pallet/utilization, vehicle-based, and accessorial formulas.',
+          'Require carriers to identify assumptions, exclusions, minimum charges, fuel index, and accessorial caps.'
+        ]
+      };
+    }).sort((a, b) => b.weeklyOpportunity - a.weeklyOpportunity);
+    return ranked[0];
+  }).sort((a, b) => b.weeklyOpportunity - a.weeklyOpportunity);
+  return {
+    title: 'AI Pricing Formula Investigator',
+    outputLabel: 'Directional Pricing Opportunity',
+    validationLabels: ['Requires McKesson Validation', 'Requires Contract/RFQ Validation'],
+    benchmarkInputMode: 'Market Benchmark Inputs',
+    benchmarkSourceStatus: 'Manual input fields; no web-search/data-source integration is available for market pricing benchmarks in this app. External benchmark — requires sourcing validation.',
+    formulasEvaluated: ['Current McKesson-style model', 'Mileage-based model', 'Stop-based model', 'Hybrid route model', 'Pallet/utilization model', 'Vehicle-based model', 'Accessorial model', 'External market benchmark inputs'],
+    assumptions: normalized,
+    rows: rows.slice(0, Number(limit) || 60),
+    details: rows.slice(0, Number(limit) || 60),
+    sourceNote: 'Directional Pricing Opportunity only. Requires McKesson Validation. Requires Contract/RFQ Validation. External benchmark — requires sourcing validation.'
+  };
 }
 
 function countScenario(items, selector) {
@@ -176,7 +391,7 @@ function cloneRouteGroup(route) {
 function buildProposedRoute(routeName, stops, plc, created = false, sourceRoutes = []) {
   const orderedStops = reorderRouteStops(stops, plc);
   const weeklyCases = sumScenario(orderedStops.map((s) => Number(s.weeklyCases)));
-  const weeklyPallets = weeklyCases / ASSUMPTIONS.casesPerPallet;
+  const weeklyPallets = palletsFromCases(weeklyCases);
   const miles = calculateRouteMiles({ stops: orderedStops, destinationPLC: plc });
   const cost = calculateRouteCost({ chargeableMiles: miles.chargeableMiles, weeklyCases });
   return {
@@ -220,7 +435,7 @@ export function buildOptimizationNodes() {
       actualPLC: stop.actualPLC,
       currentPickupFrequency: primaryFrequency(stop),
       weeklyCases: Number(stop.weeklyCases) || 0,
-      weeklyPallets: roundScenario((Number(stop.weeklyCases) || 0) / ASSUMPTIONS.casesPerPallet),
+      weeklyPallets: roundScenario(palletsFromCases(stop.weeklyCases)),
       currentWeeklyCost: Number(stop.totalRouteCost || stop.sumBilledWeekly || 0),
       sourceRecord: stop
     }))
@@ -252,7 +467,7 @@ export function calculateNetworkTotals(routeGroups = []) {
     routeCount: routeGroups.length,
     centerCount: sumScenario(routeGroups.map((r) => (r.stops || []).length)),
     weeklyCases: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyCases))),
-    weeklyPallets: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyPallets))),
+    weeklyPallets: roundScenario(sumScenario(routeGroups.map((r) => routePallets(r)))),
     weeklyMiles: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyMiles ?? r.currentPathMiles ?? r.workbookMiles))),
     driverHours: roundScenario(sumScenario(routeGroups.map((r) => r.driverHours ?? calculateDriverHours(r.weeklyMiles ?? r.currentPathMiles ?? 0)))),
     fuelCost: roundScenario(sumScenario(routeGroups.map((r) => r.fuelCost ?? r.workbookFuel))),
@@ -351,8 +566,8 @@ function centerMoveDetail(stop, route, proposedRoute, currentPLC, proposedPLC, c
     proposedPickupFrequency: proposedFrequency,
     currentWeeklyCases: Number(stop.weeklyCases) || 0,
     proposedWeeklyCases: frequencyChanged ? roundScenario((Number(stop.weeklyCases) || 0) / 2) : Number(stop.weeklyCases) || 0,
-    currentWeeklyPallets: roundScenario((Number(stop.weeklyCases) || 0) / ASSUMPTIONS.casesPerPallet),
-    proposedWeeklyPallets: roundScenario((frequencyChanged ? (Number(stop.weeklyCases) || 0) / 2 : Number(stop.weeklyCases) || 0) / ASSUMPTIONS.casesPerPallet),
+    currentWeeklyPallets: roundScenario(palletsFromCases(stop.weeklyCases)),
+    proposedWeeklyPallets: roundScenario(palletsFromCases(frequencyChanged ? (Number(stop.weeklyCases) || 0) / 2 : Number(stop.weeklyCases) || 0)),
     currentWeeklyCost: roundScenario(currentCost),
     proposedWeeklyCost: roundScenario(proposedCost),
     weeklyScenarioSavings: weeklySavings,
@@ -370,7 +585,7 @@ function centerMoveDetail(stop, route, proposedRoute, currentPLC, proposedPLC, c
 
 export function splitRouteGroup(routeGroup, mode = SCENARIO_TYPES.MAX) {
   if (!routeGroup) return [];
-  const shouldSplit = routeGroup.weeklyPallets > ASSUMPTIONS.highUtilizationPalletThreshold || routeGroup.plcMismatch || routeGroup.stopCount > (mode === SCENARIO_TYPES.MAX ? 8 : 11);
+  const shouldSplit = routePallets(routeGroup) > ASSUMPTIONS.highUtilizationPalletThreshold || routeGroup.plcMismatch || routeGroup.stopCount > (mode === SCENARIO_TYPES.MAX ? 8 : 11);
   if (!shouldSplit) return [buildProposedRoute(routeGroup.routeName, routeGroup.stops, routeGroup.currentEndpointPLC, false, [routeGroup.routeName])];
   const byPlc = {};
   for (const stop of routeGroup.stops || []) {
@@ -398,10 +613,10 @@ export function consolidateRouteGroups(routeGroups = [], mode = SCENARIO_TYPES.M
   if (mode === SCENARIO_TYPES.CURRENT) return routeGroups;
   const result = [];
   const used = new Set();
-  const sorted = [...routeGroups].sort((a, b) => a.weeklyPallets - b.weeklyPallets);
+  const sorted = [...routeGroups].sort((a, b) => routePallets(a) - routePallets(b));
   for (const route of sorted) {
     if (used.has(route.routeName)) continue;
-    const partner = sorted.find((candidate) => !used.has(candidate.routeName) && candidate.routeName !== route.routeName && candidate.currentEndpointPLC === route.currentEndpointPLC && route.weeklyPallets + candidate.weeklyPallets <= ASSUMPTIONS.highUtilizationPalletThreshold && route.underutilized && candidate.underutilized);
+    const partner = sorted.find((candidate) => !used.has(candidate.routeName) && candidate.routeName !== route.routeName && candidate.currentEndpointPLC === route.currentEndpointPLC && routePallets(route) + routePallets(candidate) <= ASSUMPTIONS.highUtilizationPalletThreshold && route.underutilized && candidate.underutilized);
     if (partner && mode !== SCENARIO_TYPES.CONSERVATIVE) {
       used.add(route.routeName); used.add(partner.routeName);
       result.push(buildProposedRoute(`${route.routeName}+${partner.routeName} Consolidated`, [...route.stops, ...partner.stops], route.currentEndpointPLC, true, [route.routeName, partner.routeName]));
@@ -437,7 +652,7 @@ export function validateScenarioNetwork(currentRoutes = [], proposedRoutes = [],
   if (missing.length) warnings.push(`Missing proposed center assignments: ${missing.slice(0, 10).join(', ')}`);
   if (duplicates.length) warnings.push(`Duplicate proposed center assignments: ${[...new Set(duplicates)].slice(0, 10).join(', ')}`);
   for (const route of proposedRoutes) {
-    if (route.weeklyPallets > ASSUMPTIONS.reefer48FootMaxPallets) warnings.push(`${route.routeName} exceeds 24 pallets and needs capacity review.`);
+    if (routePallets(route) > ASSUMPTIONS.reefer48FootMaxPallets) warnings.push(`${route.routeName} exceeds 24 pallets and needs capacity review.`);
     if (route.driverHours > ASSUMPTIONS.driverHourLimit) warnings.push(`${route.routeName} exceeds 11 driver hours and needs driver-time validation.`);
     if ((route.sourceRoutes || []).length > 1) warnings.push(`${route.routeName} is a consolidation scenario and requires operational validation.`);
   }
@@ -445,7 +660,7 @@ export function validateScenarioNetwork(currentRoutes = [], proposedRoutes = [],
   const proposedCases = sumScenario(proposedRoutes.map((r) => r.weeklyCases));
   if (Math.abs(currentCases - proposedCases) > 0.01 && !frequencyChanges.length) warnings.push('Weekly cases changed without an explicit pickup frequency change list.');
   return {
-    valid: !missing.length && !duplicates.length && proposedRoutes.every((r) => r.weeklyPallets <= ASSUMPTIONS.reefer48FootMaxPallets),
+    valid: !missing.length && !duplicates.length && proposedRoutes.every((r) => routePallets(r) <= ASSUMPTIONS.reefer48FootMaxPallets),
     missingCenters: missing,
     duplicateCenters: [...new Set(duplicates)],
     validationWarnings: warnings
@@ -467,8 +682,8 @@ export function compareCurrentVsProposed(currentRoutes = [], proposedRoutes = []
       proposedCases: route.weeklyCases,
       currentMiles: roundScenario(sumScenario(sourceRows.map((r) => r.weeklyMiles || r.currentPathMiles || 0))),
       proposedMiles: route.weeklyMiles,
-      currentPallets: roundScenario(sumScenario(sourceRows.map((r) => r.weeklyPallets || 0))),
-      proposedPallets: route.weeklyPallets,
+      currentPallets: roundScenario(sumScenario(sourceRows.map((r) => routePallets(r)))),
+      proposedPallets: roundScenario(routePallets(route)),
       currentCost: roundScenario(currentCost),
       proposedCost: route.weeklyCost,
       deltaCost: roundScenario(route.weeklyCost - currentCost),
