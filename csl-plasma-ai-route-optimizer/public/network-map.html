@@ -411,8 +411,8 @@ body.optimization-active aside{padding-bottom:34px;}
         <div id="aiOptimizerOutput" class="ai-output"><div class="ai-title">AI output will show here.</div>Select a route or analyze all routes. The API key stays on the server.</div>
       </div>
 
-      <div class="ai-optimizer-card">
-        <h2>AI Pricing Formula Investigator</h2>
+      <div class="ai-optimizer-card hidden" style="display:none">
+        <h2>Pricing Formula Analysis</h2>
         <div><b>Directional Pricing Opportunity.</b> Requires McKesson Validation. Requires Contract/RFQ Validation.</div>
         <div class="scenario-help">
           <b>Market Benchmark Inputs:</b> no web-search/data-source integration for market pricing benchmarks exists in this app. Enter externally researched rates manually. External benchmark — requires sourcing validation.
@@ -438,7 +438,7 @@ body.optimization-active aside{padding-bottom:34px;}
           <div><label for="pricingDriverHoursOverride">Driver hours override</label><input id="pricingDriverHoursOverride" type="number" min="0" step="0.1" value="0" /></div>
         </div>
         <div class="button-row">
-          <button class="action primary" id="pricingRun" type="button">Evaluate Pricing Formulas</button>
+          <button class="action primary" id="pricingRun" type="button">Run Pricing Analysis</button>
         </div>
         <div id="pricingFormulaOutput" class="ai-output"><div class="ai-title">Pricing formulas will show here.</div>Run the investigator to compare current McKesson-style pricing against alternative directional formulas.</div>
       </div>
@@ -446,6 +446,7 @@ body.optimization-active aside{padding-bottom:34px;}
       <div class="button-row">
         <button class="action primary" id="optApplyScenario" type="button">Send Route Plan to Playground</button>
         <button class="action primary" id="optLoadActualRoutes" type="button">Load Actual Optimization Routes</button>
+        <button class="action primary" id="optScenarioPdf" type="button">Download Scenario PDF</button>
         <button class="action" id="optExport" type="button">Export CSV</button>
         <button class="action" id="optResetFilters" type="button">Reset Filters</button>
       </div>
@@ -493,7 +494,7 @@ body.optimization-active aside{padding-bottom:34px;}
 
     <div id="rfqReadinessPanel" class="view-panel hidden">
       <div class="scenario-card">
-        <h2>AI RFQ Data Readiness</h2>
+        <h2>RFQ Data Readiness</h2>
         <div class="sub" style="margin-bottom:8px">Identify available RFQ data, missing fields, priorities, owners, and why each field matters for sourcing and route optimization.</div>
         <div class="button-row"><button class="action primary" id="loadRfqReadiness" type="button">Refresh RFQ Readiness</button><button class="action" id="exportRfqRequirements" type="button">Export RFQ Data Requirements CSV</button><button class="action" id="exportRfqGaps" type="button">Export Missing Data Gaps CSV</button><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
         <div class="button-row"><button class="action" id="exportMckessonAsk" type="button">Export McKesson Data Request CSV</button><button class="action" id="exportCslAsk" type="button">Export CSL Internal Data Request CSV</button></div>
@@ -513,7 +514,7 @@ body.optimization-active aside{padding-bottom:34px;}
   <main>
     <div class="topbar">
       <div>
-        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button><button class="tab-btn" id="tabMaxSavings" type="button">Max Savings AI Optimizer</button><button class="tab-btn" id="tabRfqReadiness" type="button">AI RFQ Data Readiness</button></div>
+        <div class="tabs"><button class="tab-btn active" id="tabPlc" type="button">PLC Network Map</button><button class="tab-btn" id="tabSchedule" type="button">Route Schedule Map</button><button class="tab-btn" id="tabPlayground" type="button">Scenario Playground</button><button class="tab-btn" id="tabOptimization" type="button">Optimization Engine</button><button class="tab-btn" id="tabAiAssistant" type="button">AI Assistant</button><button class="tab-btn" id="tabMaxSavings" type="button">Max Savings AI Optimizer</button></div>
         <div class="title" id="mapTitle" style="margin-top:8px">All centers by Actual PLC</div>
       </div>
       <div class="pill" id="visiblePill">0 visible centers</div>
@@ -2465,6 +2466,7 @@ if($('pricingRun')) $('pricingRun').addEventListener('click', loadMaxSavingsScen
 if($('maxSavingsMapMode')) $('maxSavingsMapMode').addEventListener('change', drawMaxSavingsScenarioMap);
 if($('previewScenarioBrief')) $('previewScenarioBrief').addEventListener('click', openScenarioBrief);
 if($('exportScenarioPdf')) $('exportScenarioPdf').addEventListener('click', openScenarioBrief);
+if($('optScenarioPdf')) $('optScenarioPdf').addEventListener('click', openScenarioBrief);
 if($('loadRfqReadiness')) $('loadRfqReadiness').addEventListener('click', loadRfqReadiness);
 if($('exportRfqRequirements')) $('exportRfqRequirements').addEventListener('click', ()=>exportCsvFile('rfq_data_requirements.csv', lastRfqReadiness?.requirements||[]));
 if($('exportRfqGaps')) $('exportRfqGaps').addEventListener('click', ()=>exportCsvFile('rfq_missing_data_gaps.csv', lastRfqReadiness?.criticalGaps||[]));
@@ -4052,7 +4054,7 @@ function renderPricingFormulaInvestigator(p){
     <td>${esc2(r.recommendation)}</td>
   </tr>`).join('');
   out.innerHTML=`
-    <div class="ai-title">${esc2(p.title || 'AI Pricing Formula Investigator')}</div>
+    <div class="ai-title">${esc2(p.title || 'Pricing Formula Analysis')}</div>
     <div><b>Directional Pricing Opportunity</b> · Requires McKesson Validation · Requires Contract/RFQ Validation</div>
     <div><b>Benchmark mode:</b> ${esc2(p.benchmarkInputMode || 'Market Benchmark Inputs')} · ${esc2(p.benchmarkSourceStatus || '')}</div>
     <div><b>Pricing formulas added:</b> ${esc2((p.formulasEvaluated||[]).join('; '))}</div>
@@ -4094,7 +4096,7 @@ function drawMaxSavingsScenarioMap(){
   }
 }
 function openScenarioBrief(){ const mode=$('maxSavingsMode')?.value || 'Max Savings Optimization'; window.open(`/api/scenario-pdf?mode=${encodeURIComponent(mode)}`,'_blank'); }
-function refreshRfqReadinessView(){ $('mapTitle').textContent='AI RFQ Data Readiness'; $('visiblePill').textContent='RFQ readiness'; if(!lastRfqReadiness) loadRfqReadiness(); }
+function refreshRfqReadinessView(){ $('mapTitle').textContent='RFQ Data Readiness'; $('visiblePill').textContent='RFQ readiness'; if(!lastRfqReadiness) loadRfqReadiness(); }
 async function loadRfqReadiness(){
   const out=$('rfqReadinessOutput'); if(out) out.innerHTML='<div class="ai-title">Loading RFQ readiness...</div>';
   const res=await fetch('/api/rfq-readiness'); const rfq=await res.json(); lastRfqReadiness=rfq; renderRfqReadiness(rfq);
