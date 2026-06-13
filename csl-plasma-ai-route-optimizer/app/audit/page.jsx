@@ -2,6 +2,38 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+
+const DATA_SOURCE_STATUS = [
+  ['Active Excel Source', 'Data base final RFQ.xlsx'],
+  ['Workbook Model', 'One consolidated workbook with multiple sheets'],
+  ['Old Five Excel Files Required', 'No'],
+  ['Runtime Data', 'Generated JSON from consolidated workbook'],
+  ['Week A/B Schedule Docs', 'Required'],
+  ['Last Data Validation Baseline', '296 active RFQ centers, $364,011.36 weekly cost, $17,472,545.31 annual cost'],
+  ['Weekly Cases', '35,245.38'],
+  ['Weekly Pallets', '503.51'],
+  ['Workbook Allocated Source Miles', '222,420.94']
+];
+
+const REQUIRED_WORKBOOK_SHEETS = [
+  'Data base RFQ',
+  'Center Mapping pick up',
+  'Rate Table',
+  'Billing Center FY26',
+  'Invoice Detail FY26',
+  'Mckesson Fleet spend FY 26',
+  'Cases by center July 24-June 25',
+  'list exclude centers'
+];
+
+const LEGACY_EXCEL_FILES = [
+  'Billing Center FY26.xlsx',
+  'Plasma Centers cases details.xlsx',
+  'Plasma Centers Information.xlsx',
+  'Rate Table.xlsx',
+  'Schedule plasma centers.xlsx'
+];
+
 const DATA_FILES = [
   ['centers.json', 'Centers'],
   ['scheduledCenters.json', 'Scheduled centers'],
@@ -231,6 +263,25 @@ export default function AuditPage() {
               </div>
             </Card>
           )}
+
+
+          <Card title="Data Source Status">
+            <p style={styles.note}>The active source of truth is one consolidated Excel workbook with multiple sheets, plus the required Week A/B Word schedule documents. Legacy five-file Excel inputs are not required by the parser.</p>
+            <div style={styles.grid}>
+              {DATA_SOURCE_STATUS.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+            </div>
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr><th style={styles.th}>Required workbook sheet</th><th style={styles.th}>Status</th></tr>
+                </thead>
+                <tbody>
+                  {REQUIRED_WORKBOOK_SHEETS.map((sheet) => <tr key={sheet}><td style={styles.td}>{sheet}</td><td style={styles.td}>Required in consolidated workbook</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <p style={styles.note}>Legacy files - no longer required by parser: {LEGACY_EXCEL_FILES.join(', ')}.</p>
+          </Card>
 
           {dataSummary && (
             <Card title="Data Quality & Source Status">
