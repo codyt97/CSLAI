@@ -2,14 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-const DATA_FILES = [
-  ['centers.json', 'Centers'],
-  ['scheduledCenters.json', 'Scheduled centers'],
-  ['weekAStops.json', 'Week A stops'],
-  ['weekBStops.json', 'Week B stops'],
-  ['billingFY26.json', 'Billing rows'],
-  ['casesByCenter.json', 'Cases by center']
-];
 
 const DATA_SOURCE_STATUS = [
   ['Active Excel Source', 'Data base final RFQ.xlsx'],
@@ -40,6 +32,15 @@ const LEGACY_EXCEL_FILES = [
   'Plasma Centers Information.xlsx',
   'Rate Table.xlsx',
   'Schedule plasma centers.xlsx'
+];
+
+const DATA_FILES = [
+  ['centers.json', 'Centers'],
+  ['scheduledCenters.json', 'Scheduled centers'],
+  ['weekAStops.json', 'Week A stops'],
+  ['weekBStops.json', 'Week B stops'],
+  ['billingFY26.json', 'Billing rows'],
+  ['casesByCenter.json', 'Cases by center']
 ];
 
 const SOURCE_STATUS_MEANINGS = {
@@ -243,26 +244,6 @@ export default function AuditPage() {
             </div>
           )}
 
-          <Card title="Data Source Status">
-            <p style={styles.note}>This dashboard uses the consolidated workbook workflow: one Excel workbook with multiple sheets, plus the required Week A and Week B Word schedule documents. Legacy five-Excel-file inputs are listed only as legacy files and are no longer required by the parser.</p>
-            <div style={styles.grid}>
-              {DATA_SOURCE_STATUS.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
-            </div>
-            <div style={styles.tableWrap}>
-              <table style={styles.table}>
-                <thead>
-                  <tr><th style={styles.th}>Required Workbook Sheet</th><th style={styles.th}>Status</th></tr>
-                </thead>
-                <tbody>
-                  {REQUIRED_WORKBOOK_SHEETS.map((sheet) => (
-                    <tr key={sheet}><td style={styles.td}>{sheet}</td><td style={styles.td}>Required in consolidated workbook</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p style={styles.sourceWarning}><b>Legacy files - no longer required by parser:</b> {LEGACY_EXCEL_FILES.join(', ')}</p>
-          </Card>
-
           {dataSummary && invoiceAudit && fuelAudit && (
             <Card title="Executive Summary">
               <p style={styles.note}>This audit view highlights billing and fuel-surcharge signals from the available runtime data. Items marked for review are audit flags, not confirmed billing errors. Route optimization results should be treated as operational opportunities unless confirmed through contract rating or McKesson repricing.</p>
@@ -282,6 +263,25 @@ export default function AuditPage() {
               </div>
             </Card>
           )}
+
+
+          <Card title="Data Source Status">
+            <p style={styles.note}>The active source of truth is one consolidated Excel workbook with multiple sheets, plus the required Week A/B Word schedule documents. Legacy five-file Excel inputs are not required by the parser.</p>
+            <div style={styles.grid}>
+              {DATA_SOURCE_STATUS.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+            </div>
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr><th style={styles.th}>Required workbook sheet</th><th style={styles.th}>Status</th></tr>
+                </thead>
+                <tbody>
+                  {REQUIRED_WORKBOOK_SHEETS.map((sheet) => <tr key={sheet}><td style={styles.td}>{sheet}</td><td style={styles.td}>Required in consolidated workbook</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            <p style={styles.note}>Legacy files - no longer required by parser: {LEGACY_EXCEL_FILES.join(', ')}.</p>
+          </Card>
 
           {dataSummary && (
             <Card title="Data Quality & Source Status">
