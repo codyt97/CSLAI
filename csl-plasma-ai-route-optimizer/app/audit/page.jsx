@@ -11,6 +11,37 @@ const DATA_FILES = [
   ['casesByCenter.json', 'Cases by center']
 ];
 
+const DATA_SOURCE_STATUS = [
+  ['Active Excel Source', 'Data base final RFQ.xlsx'],
+  ['Workbook Model', 'One consolidated workbook with multiple sheets'],
+  ['Old Five Excel Files Required', 'No'],
+  ['Runtime Data', 'Generated JSON from consolidated workbook'],
+  ['Week A/B Schedule Docs', 'Required'],
+  ['Last Data Validation Baseline', '296 active RFQ centers, $364,011.36 weekly cost, $17,472,545.31 annual cost'],
+  ['Weekly Cases', '35,245.38'],
+  ['Weekly Pallets', '503.51'],
+  ['Workbook Allocated Source Miles', '222,420.94']
+];
+
+const REQUIRED_WORKBOOK_SHEETS = [
+  'Data base RFQ',
+  'Center Mapping pick up',
+  'Rate Table',
+  'Billing Center FY26',
+  'Invoice Detail FY26',
+  'Mckesson Fleet spend FY 26',
+  'Cases by center July 24-June 25',
+  'list exclude centers'
+];
+
+const LEGACY_EXCEL_FILES = [
+  'Billing Center FY26.xlsx',
+  'Plasma Centers cases details.xlsx',
+  'Plasma Centers Information.xlsx',
+  'Rate Table.xlsx',
+  'Schedule plasma centers.xlsx'
+];
+
 const SOURCE_STATUS_MEANINGS = {
   'source-parsed-json': 'Loaded from generated runtime JSON.',
   'fallback-records-json': 'Derived from records.json because newer generated JSON is unavailable.',
@@ -211,6 +242,26 @@ export default function AuditPage() {
               <button style={styles.exportButton} onClick={exportDataQualityWarnings} disabled={!warnings.length}>Export Data Quality Warnings CSV</button>
             </div>
           )}
+
+          <Card title="Data Source Status">
+            <p style={styles.note}>This dashboard uses the consolidated workbook workflow: one Excel workbook with multiple sheets, plus the required Week A and Week B Word schedule documents. Legacy five-Excel-file inputs are listed only as legacy files and are no longer required by the parser.</p>
+            <div style={styles.grid}>
+              {DATA_SOURCE_STATUS.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+            </div>
+            <div style={styles.tableWrap}>
+              <table style={styles.table}>
+                <thead>
+                  <tr><th style={styles.th}>Required Workbook Sheet</th><th style={styles.th}>Status</th></tr>
+                </thead>
+                <tbody>
+                  {REQUIRED_WORKBOOK_SHEETS.map((sheet) => (
+                    <tr key={sheet}><td style={styles.td}>{sheet}</td><td style={styles.td}>Required in consolidated workbook</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={styles.sourceWarning}><b>Legacy files - no longer required by parser:</b> {LEGACY_EXCEL_FILES.join(', ')}</p>
+          </Card>
 
           {dataSummary && invoiceAudit && fuelAudit && (
             <Card title="Executive Summary">
