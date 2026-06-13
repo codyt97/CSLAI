@@ -1,17 +1,145 @@
-import { buildScenarioBriefData } from '../../../lib/aiOptimizer.js';
+import { buildCurrentNetworkBaseline, buildScenarioBriefData } from '../../../lib/aiOptimizer.js';
 
-function money(value) { return Number(value || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' }); }
-function num(value) { return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
-function esc(value) { return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
-function rows(items, cols) { return (items || []).map((item) => `<tr>${cols.map((col) => `<td>${esc(typeof col === 'function' ? col(item) : item[col])}</td>`).join('')}</tr>`).join(''); }
+const ACTIVE_RFQ_BASELINE = {
+  activeCenters: 296,
+  weeklyCost: 364011.36,
+  annualCost: 17472545.31,
+  weeklyCases: 35439.52,
+  weeklyLiters: 408533.22,
+  weeklyMiles: 40429.02,
+  casesPerPallet: 70,
+  reefer48FootPallets: 24
+};
+
+function money(value) {
+  return Number(value || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+}
+
+function num(value) {
+  return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function palletsFromCases(cases = 0) {
+  return (Number(cases) || 0) / ACTIVE_RFQ_BASELINE.casesPerPallet;
+}
+
+function opportunity(current, proposed) {
+  return (Number(current) || 0) - (Number(proposed) || 0);
+}
+
+function td(value, className = '') {
+  return `<td${className ? ` class="${className}"` : ''}>${esc(value)}</td>`;
+}
+
+function currentPlcForRoute(row, routeLookup) {
+  if (routeLookup.has(row.route)) return routeLookup.get(row.route).currentEndpointPLC;
+  const source = [...routeLookup.values()].find((route) => String(row.route || '').startsWith(route.routeName));
+  return source?.currentEndpointPLC || 'Current baseline PLC requires validation';
+}
+
+function routeRows(routeComparison, routeLookup) {
+  return (routeComparison || []).map((row) => {
+    const weeklyOpportunity = opportunity(row.currentCost, row.proposedCost);
+    const cases = Number(row.currentCases || row.proposedCases || 0);
+    const pallets = palletsFromCases(cases);
+    const utilization = pallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets * 100;
+    return `<tr>
+      ${td(row.route)}
+      ${td(currentPlcForRoute(row, routeLookup))}
+      ${td(`${row.route} / ${row.plc || 'Scenario PLC requires validation'}`)}
+      ${td(num(row.currentMiles))}
+      ${td(num(row.proposedMiles))}
+      ${td(money(row.currentCost), 'money')}
+      ${td(money(row.proposedCost), 'money')}
+      ${td(money(weeklyOpportunity), 'money')}
+      ${td(money(weeklyOpportunity * 52), 'money')}
+      ${td(num(cases))}
+      ${td(num(pallets))}
+      ${td(`${num(utilization)}%`)}
+    </tr>`;
+  }).join('');
+}
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get('mode') || 'Max Savings Optimization';
   const brief = buildScenarioBriefData(mode);
   const s = brief.scenario;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(brief.subtitle)}</title><style>
-    body{font-family:Arial,sans-serif;color:#172033;margin:32px;line-height:1.35} h1{margin:0;color:#0f172a} h2{margin-top:26px;color:#1e3a8a}.hero{border:2px solid #1d4ed8;border-radius:16px;padding:18px;background:#eff6ff}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.kpi{border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#fff}.kpi b{display:block;font-size:20px}table{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0}th,td{border:1px solid #e2e8f0;padding:7px;text-align:left;vertical-align:top}th{background:#f8fafc}.footer{margin-top:28px;font-size:11px;color:#475569}.page{page-break-after:always}@media print{button{display:none} body{margin:18px}.page{page-break-after:always}}
-  </style></head><body><button onclick="window.print()">Print / Save as PDF</button><section class="page"><div class="hero"><h1>PlasmaOps / CSL Route Intelligence scenario brief</h1><p>${esc(brief.subtitle)}</p><h2>${money(s.annualScenarioSavings)} annual scenario savings</h2><div class="kpis"><div class="kpi">Weekly scenario savings<b>${money(s.weeklyScenarioSavings)}</b></div><div class="kpi">Weekly miles change<b>${num(s.deltaTotals.weeklyMiles)}</b></div><div class="kpi">CO2 kg change<b>${num(s.deltaTotals.co2Kg)}</b></div><div class="kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><p>${esc(brief.executiveSummary)}</p></div><h2>Current vs Proposed Totals</h2><table><thead><tr><th>Metric</th><th>Current</th><th>Proposed</th><th>Delta</th></tr></thead><tbody>${['routeCount','centerCount','weeklyCases','weeklyMiles','driverHours','fuelCost','co2Kg','weeklyCost','annualCost'].map((key)=>`<tr><td>${key}</td><td>${num(s.currentTotals[key])}</td><td>${num(s.proposedTotals[key])}</td><td>${num(s.deltaTotals[key])}</td></tr>`).join('')}</tbody></table></section><section class="page"><h2>Key Scenario Savings, Risks and Trade-offs</h2><ul>${s.risksAndTradeoffs.map((risk)=>`<li>${esc(risk)}</li>`).join('')}</ul><h2>PLC Reassignments</h2><table><thead><tr><th>Center</th><th>From PLC</th><th>To PLC</th><th>Cases/week</th><th>Delta cost/week</th></tr></thead><tbody>${rows(s.centersReassignedPLC, [(r)=>`${r.centerNumber} ${r.centerName}`,'currentPLC','proposedPLC','currentWeeklyCases','weeklyScenarioSavings']) || '<tr><td colspan="5">None</td></tr>'}</tbody></table><h2>Frequency Changes</h2><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Cases/week</th><th>Delta cost/week</th></tr></thead><tbody>${rows(s.centersChangedFrequency, [(r)=>`${r.centerNumber} ${r.centerName}`,'currentPickupFrequency','proposedPickupFrequency','currentWeeklyCases','weeklyScenarioSavings']) || '<tr><td colspan="5">None</td></tr>'}</tbody></table></section><section><h2>Route-by-route Comparison</h2><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Miles/week</th><th>Cases/week</th><th>Current cost/week</th><th>Proposed cost/week</th><th>Delta cost</th></tr></thead><tbody>${rows(s.routeComparison, ['route','plc','stops','proposedMiles','proposedCases','currentCost','proposedCost','deltaCost'])}</tbody></table><h2>Route Stop Sequences</h2>${s.proposedStopSequences.map((route)=>`<h3>${esc(route.routeName)} → ${esc(route.proposedPLC)}</h3><table><thead><tr><th>Stop #</th><th>City/State</th><th>Center</th><th>Frequency</th><th>Cases/week</th></tr></thead><tbody>${route.stops.map((stop)=>`<tr><td>${stop.stopNumber}</td><td>${esc(stop.city)}, ${esc(stop.state)}</td><td>${esc(stop.centerNumber)} ${esc(stop.centerName)}</td><td>${esc(stop.frequency)}</td><td>${num(stop.casesWeek)}</td></tr>`).join('')}</tbody></table>`).join('')}<div class="footer">Generated ${esc(brief.generatedAt)} · PlasmaOps / CSL Route Intelligence<br>${esc(brief.sourceNote)}</div></section></body></html>`;
+  const generatedAt = new Date(brief.generatedAt || Date.now()).toLocaleString('en-US');
+  const routeLookup = new Map(buildCurrentNetworkBaseline().routeGroups.map((route) => [route.routeName, route]));
+  const weeklyOpportunity = Number(s.weeklyScenarioSavings) || 0;
+  const proposedWeeklyCost = ACTIVE_RFQ_BASELINE.weeklyCost - weeklyOpportunity;
+  const proposedAnnualCost = ACTIVE_RFQ_BASELINE.annualCost - weeklyOpportunity * 52;
+  const proposedWeeklyMiles = ACTIVE_RFQ_BASELINE.weeklyMiles + (Number(s.deltaTotals?.weeklyMiles) || 0);
+  const proposedWeeklyCases = ACTIVE_RFQ_BASELINE.weeklyCases + (Number(s.deltaTotals?.weeklyCases) || 0);
+  const baselinePallets = palletsFromCases(ACTIVE_RFQ_BASELINE.weeklyCases);
+  const proposedPallets = palletsFromCases(proposedWeeklyCases);
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(s.scenarioName)} Scenario Report</title><style>
+    :root{--ink:#111827;--muted:#475569;--line:#dbe3ef;--soft:#f8fafc;--brand:#1d4ed8}
+    *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:var(--ink);margin:28px;line-height:1.4;background:#fff}
+    .print-button{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:6px;padding:9px 12px;font-weight:700;margin-bottom:18px}
+    header{border-bottom:3px solid var(--brand);padding-bottom:14px;margin-bottom:18px}h1{font-size:28px;margin:0 0 6px}h2{font-size:17px;margin:24px 0 8px;color:#0f172a}.status{display:inline-block;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:999px;padding:5px 9px;font-weight:700;font-size:12px}
+    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.metric{border:1px solid var(--line);background:var(--soft);padding:10px;border-radius:6px}.metric span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.metric b{display:block;font-size:18px;margin-top:3px}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#1e3a8a}.money{text-align:right;white-space:nowrap}.notes li{margin-bottom:5px}.small{font-size:11px;color:var(--muted)}.page-break{break-before:page}
+    @media print{body{margin:16mm}.print-button{display:none}.page-break{break-before:page}a{color:inherit;text-decoration:none}}
+  </style></head><body>
+  <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+
+  <header>
+    <h1>${esc(s.scenarioName)}</h1>
+    <div class="small">Generated date: ${esc(generatedAt)}</div>
+    <div class="status">Directional estimate — requires McKesson / RFQ validation</div>
+  </header>
+
+  <section>
+    <h2>Executive Summary</h2>
+    <div class="summary">
+      <div class="metric"><span>Active RFQ centers</span><b>${num(ACTIVE_RFQ_BASELINE.activeCenters)}</b></div>
+      <div class="metric"><span>Weekly baseline cost</span><b>${money(ACTIVE_RFQ_BASELINE.weeklyCost)}</b></div>
+      <div class="metric"><span>Annual baseline cost</span><b>${money(ACTIVE_RFQ_BASELINE.annualCost)}</b></div>
+      <div class="metric"><span>Weekly cases</span><b>${num(ACTIVE_RFQ_BASELINE.weeklyCases)}</b></div>
+      <div class="metric"><span>Weekly pallets = cases / 70</span><b>${num(baselinePallets)}</b></div>
+      <div class="metric"><span>Estimated annual opportunity</span><b>${money(s.annualScenarioSavings)}</b></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Current vs Proposed Totals</h2>
+    <table><thead><tr><th>Metric</th><th>Current Active RFQ Baseline</th><th>Proposed Scenario</th><th>Opportunity / Delta</th></tr></thead><tbody>
+      <tr><td>Weekly cost</td><td class="money">${money(ACTIVE_RFQ_BASELINE.weeklyCost)}</td><td class="money">${money(proposedWeeklyCost)}</td><td class="money">${money(weeklyOpportunity)}</td></tr>
+      <tr><td>Annual cost</td><td class="money">${money(ACTIVE_RFQ_BASELINE.annualCost)}</td><td class="money">${money(proposedAnnualCost)}</td><td class="money">${money(s.annualScenarioSavings)}</td></tr>
+      <tr><td>Weekly miles</td><td>${num(ACTIVE_RFQ_BASELINE.weeklyMiles)}</td><td>${num(proposedWeeklyMiles)}</td><td>Directional estimate — mileage basis differs and requires validation</td></tr>
+      <tr><td>Weekly cases</td><td>${num(ACTIVE_RFQ_BASELINE.weeklyCases)}</td><td>${num(proposedWeeklyCases)}</td><td>${num(Number(s.deltaTotals?.weeklyCases) || 0)}</td></tr>
+      <tr><td>Weekly pallets</td><td>${num(baselinePallets)}</td><td>${num(proposedPallets)}</td><td>Pallets use cases / 70</td></tr>
+      <tr><td>Weekly opportunity</td><td></td><td></td><td class="money">${money(weeklyOpportunity)}</td></tr>
+      <tr><td>Annual opportunity</td><td></td><td></td><td class="money">${money(s.annualScenarioSavings)}</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="page-break">
+    <h2>Route-by-Route Comparison</h2>
+    <table><thead><tr>
+      <th>Route name</th><th>Current PLC</th><th>Proposed route / PLC</th><th>Workbook Allocated Source Miles</th><th>Scenario Routed Miles</th><th>Current weekly cost</th><th>Proposed weekly cost</th><th>Weekly opportunity</th><th>Annual opportunity</th><th>Weekly cases</th><th>Weekly pallets</th><th>Pallet utilization using 24-pallet 48-ft capacity</th>
+    </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="12">No route comparison rows available.</td></tr>'}</tbody></table>
+  </section>
+
+  <section>
+    <h2>Validation Notes</h2>
+    <ul class="notes">
+      <li>Savings are directional, not guaranteed.</li>
+      <li>Current miles and proposed miles may use different basis.</li>
+      <li>McKesson validation required.</li>
+      <li>RFQ / contract validation required.</li>
+      <li>Cold-chain and site storage validation required for frequency changes.</li>
+    </ul>
+    <p class="small">Pallets are calculated as weekly cases / 70. Capacity uses 24 pallets for a 48-ft reefer. This report is print-ready HTML; use browser Print and Save as PDF.</p>
+  </section>
+  </body></html>`;
+
   return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
