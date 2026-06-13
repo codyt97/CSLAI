@@ -519,6 +519,7 @@ async function loadRuntimeData(){
   if(!nextRecords.length) throw new Error('Runtime data response did not include records.');
   records = nextRecords;
   scheduledRouteMilesCache.clear();
+  fullScheduledRouteMilesCache.clear();
   stats = { ...(stats || {}), runtimeRouteGroups: Array.isArray(payload?.routes) ? payload.routes.length : 0, runtimeRecordCount: records.length, runtimeLoadedAt: new Date().toISOString() };
   return records;
 }
@@ -603,6 +604,15 @@ const WEEK_A_SCHEDULE_LINES = ["YUMA", "Hello,", "Please see below for next week
 const WEEK_B_SCHEDULE_LINES = ["YUMA", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Tuesday 05/12/26 EST", "Lifestream San Bernardino – 1000", "Rialto 507 – 1200", "Riverside 299 – 1400", "National City 297 – 1800", "Wednesday 05/13/26 EST", "San Luis 158 – 1000", "Yuma 515 – 1200", "Nogales 108 – 1900", "Thursday 05/14/26 EST", "San Antonio 157 – 1100", "Victoria 530 – 1400", "EL PASO", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Abilene 701 – 1100", "Tuesday 05/12/26 EST", "Albuquerque 034 – 0900", "Albuquerque 137 – 1100", "Douglas 190 – 2000", "Wednesday 05/13/26 EST", "Las Cruces 506 – 1000", "El Paso 279 – 1230", "El Paso 508 – 1430", "El Paso 197 – 1700", "El Paso 248 – 1900", "WEBSTER", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Pleasant Grove 046 – 0900", "Dallas 510 – 1100", "Dallas 078 – 1300", "Grand Prairie 049 – 1500", "Tuesday 05/12/26 EST", "Temple 521 – 0900", "College Station 152 – 1230", "Tyler 520 – 1700", "Wednesday 05/13/26 EST", "McKinney 276 – 1000", "Mesquite 085 – 1200", "Webster 548 – 1830", "Thursday 05/14/26 EST", "Baytown 086 – 0800", "Port Arthur 176 – 1100", "Dallas 537 – 1830", "DECATUR", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Mobile 284 – 0800", "Pensacola 623 – 1030", "Jacksonville 251 – 1900", "Tuesday 05/12/26 EST", "Orange City 155 – 0700", "Augusta 253 – 1500", "Macon 233 – 1900", "Wednesday 05/13/26 EST", "Lawrenceville 186 – 0700", "Decatur 104 – 1000", "East Point 193 – 1 23 0", "HENDERSON", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Tuesday 05/12/26 EST", "Las Vegas 216 – 1000", "Las Vegas 081 – 1200", "Las Vegas 501 – 1400", "Victorville 560 – 1900", "Wednesday 05/13/26 EST", "Stockton 533 – 1000", "Fairfield 554 – 1300", "Sacramento 552 – 1500", "Citrus Heights 553 – 1700", "Thursday 05/14/26 EST", "Las Vegas 529 – 1000", "Las Vegas 172 – 1200", "Las Vegas 563 – 1400", "Henderson 134 – 1600", "BOISE", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Boise 227 – 1400", "Nampa 505 – 1630", "Tuesday 05/12/26 EST", "Olympia 517 – 1000", "Federal Way 110 – 1130", "Kent 112 – 1300", "Spokane Main 621 – 1900", "Spokane Valley 622 – 2030", "Thursday 05/14/26 EST", "Okla homa City 422 – 0800", "AUSTIN", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Laredo 287 – 0800", "McAllen 258 – 1330", "Hidalgo 151 – 1530", "Tuesday 05/12/26 EST", "Weslaco 184 – 0800", "Harlingen 185 – 1030", "Brownsville 135 – 1300", "Thursday 05/14/26 EST", "Round Rock 532 – 0800", "Austin 230 – 1030", "Fredericksburg 703 – 1400", "San Antonio 087 – 1600", "TUCSON", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Tucson 624 – 1100", "Tucson 111 – 1300", "Tucson 071 – 1500", "Tempe 048 – 1830", "Tempe 427 – 2030", "Tuesday 05/12/26 EST", "Gilbert 131 – 1000", "Peoria 133 – 1300", "LUBBOCK", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Rapid City 288 – 1500", "Tuesday 05/12/26 EST", "Ft. Collins 705 – 0900", "Greeley 615 – 1130", "Northglenn 141 – 1400", "Arvada 129 – 1600", "Colorado Springs 277 – 1930", "Wednesday 05/13/26 EST", "Amarillo 283 – 1400", "Lubbock 550 – 1800", "Thursday 05/14/26 EST", "Lawton 452 – 1100", "Tulsa 014 – 1530", "Tulsa 417 – 1730", "Friday 05/15/26 EST", "Ft. Worth 419 – 0800", "BROWNSVILLE", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Brownsville 114 – 0900", "Brownsville 113 – 1200", "Corpus Christi 603 – 1700", "Tuesday 05/12/26 EST", "Lackland 706 – 0900", "Wednesday 05/13/26 EST", "Houston 208 – 0800", "Houston 209 – 1000", "Houston 168 – 1230", "Houston 143 – 1430", "Houston 274 – 1700", "RENO", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Grand Junction 159 – 0900", "Midvale 273 – 1530", "Salt Lake City 627 – 1730", "Tuesday 05/12/26 EST", "Gresham 055 – 1000", "Vancouver 102 – 1130", "Hillsboro 126 – 1330", "Medford 037 – 2000", "Thursday 05/14/26 EST", "Haltom City 188 – 0800", "Friday 05/15/26 EST", "Gresham 055 – 1800 (Skelton/Boyle)", "BIRMINGHAM", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Huntsville 526 – 0800", "Birmingham 259 – 1200", "Rainbow City 275 – 1430", "Rome 298 – 1730", "Tuesday 05/12/26 EST", "Smyrna 123 – 0700", "Jonesboro 120 – 1000", "Stone Mountain 119 – 1230", "Gainesville 182 – 1500", "Wednesday 05/13/26 EST", "Dalton 296 – 0700", "Knoxville 405 – 1200", "TAMPA", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Ocala 290 – 1400", "Temple Terrace 252 – 1800", "Tuesday 05/12/26 EST", "Pinellas Park 139 – 0700", "Largo 543 – 1000", "Tampa 109 – 1230", "Tampa 556 – 1500", "Lakeland 154 – 1800", "Wednesday 05/13/26 EST", "Orlando 144 – 0700", "Orlando 511 – 0930", "Longwood 195 – 1200", "TALLAHASSEE", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Fort Smith 278 – 1400", "Springdale 268 – 1700", "Tuesday 05/12/26 EST", "Little Rock 234 – 0800", "Jackson 225 – 1400", "Wednesday 05/13/26 EST", "Westwego 153 – 0800", "Kenner 149 – 1030", "Gulfport 122 – 1400", "Thursday 05/14/26 EST", "Tallahassee 211 – 0700", "Friday 05/15/26 EST", "Shreveport 245 – 0900", "MUSTANG", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Springfield 620 – 1530", "Tuesday 05/12/26 EST", "CBC of the Ozarks Springfield – 0800", "Columbia 271 – 1300", "Kansas City 011 – 1630", "Kansas City 410 – 1830", "Wednesday 05/13/26 EST", "Lawrence 012 – 0900", "Topeka 518 – 1130", "Manhattan 019 – 1400", "Wichita 263 – 1800", "Wichita 415 – 2000", "Thursday 05/14/26 EST", "Warr Acres 527 – 0900", "Mustang 243 – 1100", "Norman 020 – 1330", "ALLENTOWN", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Tuesday 05/12/26 EST", "State College 262 – 0700", "Wilkes Barre 286 – 1130", "Taylor 240 – 1330", "Allentown 294 – 1630", "Wednesday 05/13/26 EST", "Aston 531 – 0700", "Baltimore 166 – 1100", "Glen Burnie 136 – 1330", "Inova Blood-Sterling – 1630", "Thursday 05/14/26 EST", "Hagerstown 174 – 0700", "McKeesport 192 – 1230", "BUFFALO", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Syracuse 196 – 0800", "Greece 194 – 1200", "Rochester 232 – 1500", "Niagara Falls 237 – 1800", "Tuesday 05/12/26 EST", "Buffalo 239 – 0700", "Cheektowaga 235 – 0930", "Lackawanna 238 – 1130", "Wednesday 05/13/26 EST", "Hamilton 494 – 0700", "Cincinnati 189 – 0900", "Cincinnati 177 – 1100", "GREENSBORO", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Tuesday 05/12/26 EST", "Montgomery 125 – 0800", "Montgomery 105 – 1000", "Auburn 183 – 1230", "Dothan 504 – 1630", "Wednesday 05/13/26 EST", "Warner Robins 509 – 0700", "N. Charleston 291 – 1430", "Thursday 05/14/26 EST", "Wilmington 228 – 0700", "Greensboro 117 – 1330", "Winston-Salem 124 – 1530", "ROCKFORD", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Beloit 005 – 0800", "Rockford 200 – 1 0 00", "Montgomery 198 – 1300", "Hazel Crest 116 – 1600", "Hobart 218 – 1800", "Tuesday 05/12/26 EST", "Southfield 070 – 0700", "Roseville 077 – 0900", "Sterling Heights 164 – 1100", "Mishawaka 249 – 1700", "Wednesday 05/13/26 EST", "Ft. Wayne 089 – 0700", "Muncie 191 – 1100", "West Lafayette 411 – 1430", "Terre Haute 265 – 1800", "SPARTANBURG", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Charlotte 418 – 0730", "Rock Hill 130 – 1000", "Spartanburg 179 – 1330", "Greenville 088 – 1530", "Tuesday 05/12/26 EST", "Columbia 612 – 0800", "Columbia 217 – 1000", "Wednesday 05/13/26 EST", "Lexington 404 – 1000", "Lexington 053 – 1130", "Louisville 054 – 1400", "Evansville 614 – 1800", "DAVENPORT", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Kankakee 551 – 0830", "Joliet 219 – 1030", "Davenport 424 – 1400", "Peoria 289 – 1630", "Tuesday 05/12/26 EST", "Springfield 285 – 0900", "Decatur 446 – 1100", "St . Louis 132 – 1500", "St . Louis 107 – 1700", "Wednesday 05/13/26 EST", "Wyoming 173 – 1400", "Portage 187 – 1600", "Thursday 05/14/26 EST", "Jackson 205 – 0800", "Highland Park 138 – 1100", "Pontiac 121 – 1330", "SAGINAW", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Flint 161 – 0700", "Grand Blanc 244 – 0900", "Saginaw 282 – 1100", "Saginaw 169 – 1230", "Lansing 118 – 1530", "Lansing 042 – 1700", "Tuesday 05/12/26 EST", "Muskegon 523 – 0700", "Indy 181 – 1300", "Wednesday 05/13/26 EST", "Toledo 223 – 0700", "Toledo 175 – 0900", "Elyria 165 – 1200", "Willoughby Hills 222 – 1400", "Cleveland 401 – 1530", "Lincoln Park 101 – 1830", "Thursday 05/14/26 EST", "Ft. Gratiot 170 – 0700", "OMAHA", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Eau Claire 514 – 1400", "Duluth 613 – 1900", "Tuesday 05/12/26 EST", "St. Paul 180 – 10 30", "Minneapolis 414 – 1230", "New Hope 163 – 1430", "Bloomington 127 – 1630", "Wednesday 05/13/26 EST", "Omaha 421 – 1100", "Thursday 05/14/26 EST", "O’Fallon 224 – 1000", "Champaign 270 – 1530", "GASTONIA", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Henrico 264 – 1100", "Richmond 524 – 1300", "Norfolk 513 – 1630", "Tuesday 05/12/26 EST", "Raleigh 231 – 0700", "Burlington 512 – 1 000", "Charlotte 203 – 1400", "Gastonia 267 – 1630", "Wednesday 05/13/26 EST", "Parkersburg 178 – 1200", "EAST PROVIDENCE", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Sunday 05 / 10 /26 EST", "Akron 402 – 0800", "Monday 05/11/26 EST", "Brewer 503 – 0800", "Woonsocket 295 – 1430", "Johnston 242 – 1630", "Tuesday 05/12/26 EST", "Clifton 255 – 0700", "Wednesday 05/13/26 EST", "Chicago 247 – 1130", "Melrose Park 453 – 1300", "Racine 065 – 1500", "South Milwaukee 140 – 1700", "Milwaukee 547 – 1900", "Thursday 05/14/26 EST", "Milwaukee 272 – 0800", "CHATTANOOGA", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Memphis 052 – 0800", "Jackson 257 – 1130", "Madison 076 – 1600", "Murfreesboro 128 – 1900", "Tuesday 05/12/26 EST", "Chattanooga 407 – 0800", "Chattanooga 010 – 1000", "Wednesday 05/13/26 EST", "Canton 236 – 0900", "Akron 402 – 1100", "Warren 204 – 1300", "Parma Heights 162 – 1500", "Medina 544 – 1700", "MIAMI", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Homestead 207 – 0700", "North Miami 545 – 0930", "Miami 206 – 1130", "Miramar 214 – 1400", "Wilton Manors 073 – 1630", "Margate 142 – 1900", "Tuesday 05/12/26 EST", "Greenacres 540 – 0700", "Riviera Beach 115 – 0930", "Port St. Lucie 072 – 1200", "Wednesday 05/13/26 EST", "Columbus 409 – 1600", "Columbus 150 – 1800", "Thursday 05/14/26 EST", "Dayton 408 – 0700", "Indy 412 – 1030", "Indy 146 – 1230", "PHILLY", "Hello,", "Please see below for next week’s shipment schedule. (All times are in EST)", "Monday 05/11/26 EST", "Edison 212 – 0700", "Philly 147 – 1000", "Philly 145 – 1130", "Philly 542 – 1300", "Yeadon 280 – 1500", "Newark 213 – 1730", "Tuesday 05/12/26 EST", "York 148 – 0700", "Mechanicsburg 171 – 1000", "Youngstown 528 – 1600", "Kent 160 – 1800", "WHITESTOWN TO DALLAS SHUTTLE", "Hello Everyone,", "Here is the schedule for the shuttle next week.", "Trailer#: RF603", "Tuesday 01/30/24", "Dallas Pickup – 0700 CST", "Wednesday 01/31/24", "Whitestown Delivery – 0700 EST", "Thursday 02/01/24", "Dallas Pickup – 0700 CST", "Friday 02/02/24", "Whitestown Delivery – 0700 EST"];
 const SCHEDULE_DAY_ORDER = {monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:7};
 const scheduledRouteMilesCache = new Map();
+const SCHEDULE_ROUTE_ORIGIN_BY_ROUTE = {
+  'AUSTIN':'CRST_HUTCHINS','BIRMINGHAM':'CRST_HUTCHINS','BOISE':'CRST_HUTCHINS','BROWNSVILLE':'CRST_HUTCHINS','DECATUR':'CRST_HUTCHINS','EL PASO':'CRST_HUTCHINS','HENDERSON':'CRST_HUTCHINS','LUBBOCK':'CRST_HUTCHINS','MUSTANG':'CRST_HUTCHINS','RENO':'CRST_HUTCHINS','TALLAHASSEE':'CRST_HUTCHINS','TAMPA':'CRST_HUTCHINS','TUCSON':'CRST_HUTCHINS','WEBSTER':'CRST_HUTCHINS','YUMA':'CRST_HUTCHINS',
+  'ALLENTOWN':'THERMOKING_INDY','BUFFALO':'THERMOKING_INDY','CHATTANOOGA':'THERMOKING_INDY','DAVENPORT':'THERMOKING_INDY','EAST PROVIDENCE':'THERMOKING_INDY','GASTONIA':'THERMOKING_INDY','GREENSBORO':'THERMOKING_INDY','MIAMI':'THERMOKING_INDY','OMAHA':'THERMOKING_INDY','PHILLY':'THERMOKING_INDY','ROCKFORD':'THERMOKING_INDY','SAGINAW':'THERMOKING_INDY','SPARTANBURG':'THERMOKING_INDY'
+};
+const SCHEDULE_TRUCK_ORIGINS = {
+  CRST_HUTCHINS:{label:'CRST Hutchins, TX', lat:32.6427, lng:-96.7131},
+  THERMOKING_INDY:{label:'ThermoKing Indianapolis, IN', lat:39.7519, lng:-86.2166}
+};
+const fullScheduledRouteMilesCache = new Map();
 function scheduleLinesForWeek(week){ return String(week||'').toUpperCase()==='B' ? WEEK_B_SCHEDULE_LINES : WEEK_A_SCHEDULE_LINES; }
 function normalizeRouteName(name){ return String(name||'').trim().toUpperCase(); }
 function normalizeCenterNumber(value){ return String(value||'').replace(/[^0-9]/g,'').replace(/^0+/, '') || ''; }
@@ -675,19 +685,88 @@ function calculateScheduledRouteMilesAB(routeName){
   return {A:a, B:b, average:vals.length ? vals.reduce((sum,v)=>sum+v,0)/vals.length : null};
 }
 function selectedScheduleWeek(){ const w=$('weekPatternFilter')?.value || ''; return w==='A'||w==='B' ? w : ''; }
+function routeBaseNameForSchedule(routeName){
+  const raw=normalizeRouteName(routeName).replace(/\s+/g,' ');
+  const keys=Object.keys(SCHEDULE_ROUTE_ORIGIN_BY_ROUTE).sort((a,b)=>b.length-a.length);
+  return keys.find(k=>raw.includes(k)) || raw;
+}
+function getRouteOriginPoint(routeName){
+  const key=SCHEDULE_ROUTE_ORIGIN_BY_ROUTE[routeBaseNameForSchedule(routeName)];
+  const origin=key ? SCHEDULE_TRUCK_ORIGINS[key] : null;
+  return origin ? {label:origin.label, lat:origin.lat, lng:origin.lng, type:'origin'} : null;
+}
+function getRouteDestinationPlcPoint(routeName){
+  const routeKey=normalizeRouteName(routeName);
+  const rows=getActiveRfqRows(records).filter(r=>normalizeRouteName(getRouteName(r))===routeKey);
+  const endpointCounts=new Map();
+  rows.forEach(r=>{
+    const plc=endpointPLCFor(r);
+    if(plc && plc !== '#N/A' && plcCoords[plc]) endpointCounts.set(plc, (endpointCounts.get(plc)||0)+1);
+  });
+  if(endpointCounts.size !== 1) return null;
+  const plc=[...endpointCounts.keys()][0];
+  const p=plcCoords[plc];
+  return p ? {label:plc, lat:p.lat, lng:p.lng, type:'plc'} : null;
+}
+function calculateFullScheduledRouteMilesDetail(routeName, week){
+  const routeKey=normalizeRouteName(routeName), weekKey=String(week||'A').toUpperCase()==='B'?'B':'A';
+  const cacheKey=`${routeKey}|${weekKey}|full`;
+  if(fullScheduledRouteMilesCache.has(cacheKey)) return fullScheduledRouteMilesCache.get(cacheKey);
+  const stops=sortScheduleStopsByDayAndStopOrder(getRouteScheduleStops(routeKey, weekKey));
+  if(stops.length<2){
+    const empty={miles:null, stopCount:stops.length, includesOrigin:false, includesDestination:false, basisLabel:'Missing scheduled stops'};
+    fullScheduledRouteMilesCache.set(cacheKey, empty);
+    return empty;
+  }
+  const origin=getRouteOriginPoint(routeKey);
+  const destination=getRouteDestinationPlcPoint(routeKey);
+  const points=[];
+  if(origin) points.push(origin);
+  points.push(...stops);
+  if(destination) points.push(destination);
+  let miles=0;
+  for(let i=1;i<points.length;i++) miles += calculateLegMiles(points[i-1], points[i]);
+  const includesOrigin=Boolean(origin);
+  const includesDestination=Boolean(destination);
+  const basisLabel=includesOrigin && includesDestination ? 'Full Scheduled Source Route Miles' : includesOrigin ? 'Origin + Stop Sequence Miles (No PLC leg)' : includesDestination ? 'Stop Sequence + PLC Miles (No origin)' : 'Stop Sequence Miles Only';
+  const detail={miles, stopCount:stops.length, includesOrigin, includesDestination, basisLabel, originLabel:origin?.label || '', destinationLabel:destination?.label || ''};
+  fullScheduledRouteMilesCache.set(cacheKey, detail);
+  return detail;
+}
+function calculateFullScheduledRouteMiles(routeName, week){
+  return calculateFullScheduledRouteMilesDetail(routeName, week).miles;
+}
+function calculateFullScheduledRouteMilesAB(routeName){
+  const a=calculateFullScheduledRouteMilesDetail(routeName,'A');
+  const b=calculateFullScheduledRouteMilesDetail(routeName,'B');
+  const vals=[a.miles,b.miles].filter(v=>Number.isFinite(Number(v)));
+  return {A:a.miles, B:b.miles, average:vals.length ? vals.reduce((sum,v)=>sum+v,0)/vals.length : null, details:{A:a, B:b}};
+}
+function fullScheduledRouteMilesValue(routeName, selectedWeek=''){
+  if(selectedWeek==='A' || selectedWeek==='B') return calculateFullScheduledRouteMiles(routeName, selectedWeek);
+  return calculateFullScheduledRouteMilesAB(routeName).average;
+}
+function formatFullScheduledRouteMiles(routeName, selectedWeek=''){
+  const suffixFor=(detail)=> detail && detail.basisLabel !== 'Full Scheduled Source Route Miles' ? ` (${detail.basisLabel})` : '';
+  if(selectedWeek==='A' || selectedWeek==='B'){
+    const detail=calculateFullScheduledRouteMilesDetail(routeName, selectedWeek);
+    return `${fmtMiles(detail.miles)}${suffixFor(detail)}`;
+  }
+  const miles=calculateFullScheduledRouteMilesAB(routeName);
+  const aSuffix=suffixFor(miles.details.A);
+  const bSuffix=suffixFor(miles.details.B);
+  if(Number.isFinite(Number(miles.A)) || Number.isFinite(Number(miles.B))) return `A: ${fmtMiles(miles.A)}${aSuffix} / B: ${fmtMiles(miles.B)}${bSuffix}`;
+  return '—';
+}
 function scheduledRouteMilesValue(routeName, selectedWeek=''){
-  if(selectedWeek==='A' || selectedWeek==='B') return calculateScheduledRouteMiles(routeName, selectedWeek);
-  return calculateScheduledRouteMilesAB(routeName).average;
+  return fullScheduledRouteMilesValue(routeName, selectedWeek);
 }
 function formatScheduledRouteMiles(routeName, selectedWeek=''){
-  if(selectedWeek==='A' || selectedWeek==='B') return fmtMiles(calculateScheduledRouteMiles(routeName, selectedWeek));
-  const miles=calculateScheduledRouteMilesAB(routeName);
-  if(Number.isFinite(Number(miles.A)) || Number.isFinite(Number(miles.B))) return `A: ${fmtMiles(miles.A)} / B: ${fmtMiles(miles.B)}`;
-  return '—';
+  return formatFullScheduledRouteMiles(routeName, selectedWeek);
 }
 function routeScheduledSourceMiles(routeRows, routeName='', selectedWeek=''){
   const routes=routeName ? [routeName] : uniqueSorted((routeRows||[]).map(getRouteName).filter(Boolean));
-  return routes.reduce((sum,route)=>sum+(Number(scheduledRouteMilesValue(route, selectedWeek))||0),0);
+  return routes.reduce((sum,route)=>sum+(Number(fullScheduledRouteMilesValue(route, selectedWeek))||0),0);
 }
 function getActiveRfqRows(rows){ return (rows||[]).filter(isActiveRfqBaselineMapRow); }
 function isFullActiveBaselineSlice(rows, activeRows){ return rows === records || (activeRows||[]).length >= ACTIVE_RFQ_BASELINE.activeCenters; }
@@ -1597,7 +1676,7 @@ function updateScenarioTable(rows, summaries){
       return `<tr><td>—</td><td>${r.routeName}</td><td>${r.city}</td><td>${r.state}</td><td>${getRouteName(r)}</td><td>${currentPLC}</td><td>${r.routeType}</td><td>${fmtMiles(currentMiles)}</td><td>${money2(cp.linehaul)}</td><td>${money2(cp.fuel)}</td><td>${money2(cp.total)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>Workbook baseline</td><td>Data base RFQ Active RFQ Baseline values; pallets = cases / 70</td><td>${fmt1(getRfqWeeklyCases(r))}</td><td>${fmt1(r.weeklyLiters)}</td><td>${fmt1(getRfqWeeklyPallets(r))}</td></tr>`;
     }).join('');
   }
-  table.innerHTML = `<thead><tr><th colspan="19">Scenario Route Totals</th></tr><tr><th>New Route</th><th>New PLC</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Linehaul</th><th>New Linehaul</th><th>Δ Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Δ Fuel</th><th>Current Cost</th><th>New Est. Cost</th><th>Δ Cost</th><th>Rate Source</th><th>Rate Detail</th></tr></thead><tbody>${summaryRows || '<tr><td colspan="19">No scenario assigned yet. The detail table below is showing the current baseline map with workbook miles, linehaul, fuel, and total cost.</td></tr>'}</tbody><thead><tr><th colspan="27">${rows.length ? 'Center-Level Scenario Detail' : 'Current Baseline Centers Visible on Map'}</th></tr><tr><th>New Stop #</th><th>Center</th><th>City</th><th>State</th><th>Current Route</th><th>Current Endpoint PLC</th><th>Current Type</th><th>Center Workbook Allocated Miles</th><th>Current Linehaul</th><th>Current Fuel</th><th>Current Cost</th><th>New Route</th><th>New PLC</th><th>New Alloc. Route Miles</th><th>New Center→PLC Miles</th><th>New Linehaul</th><th>New Fuel</th><th>New Est. Cost</th><th>Δ Miles</th><th>Δ Linehaul</th><th>Δ Fuel</th><th>Δ Cost</th><th>Rate Source</th><th>Rate Detail</th><th>Cases/wk</th><th>Liters/wk</th><th>Pallets/wk</th></tr></thead><tbody>${detailRows || '<tr><td colspan="27">No visible centers found.</td></tr>'}</tbody>`;
+  table.innerHTML = `<thead><tr><th colspan="19">Scenario Route Totals</th></tr><tr><th>New Route</th><th>New PLC</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Linehaul</th><th>New Linehaul</th><th>Δ Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Δ Fuel</th><th>Current Cost</th><th>New Est. Cost</th><th>Δ Cost</th><th>Rate Source</th><th>Rate Detail</th></tr></thead><tbody>${summaryRows || '<tr><td colspan="19">No scenario assigned yet. The detail table below is showing the current baseline map with workbook miles, linehaul, fuel, and total cost.</td></tr>'}</tbody><thead><tr><th colspan="27">${rows.length ? 'Center-Level Scenario Detail' : 'Current Baseline Centers Visible on Map'}</th></tr><tr><th>New Stop #</th><th>Center</th><th>City</th><th>State</th><th>Current Route</th><th>Current Endpoint PLC</th><th>Current Type</th><th>Center Workbook Allocated Miles</th><th>Current Linehaul</th><th>Current Fuel</th><th>Current Cost</th><th>New Route</th><th>New PLC</th><th>New Alloc. Route Miles</th><th>New Center→PLC Miles</th><th>New Linehaul</th><th>New Fuel</th><th>New Est. Cost</th><th>Δ Miles</th><th>Δ Linehaul</th><th>Δ Fuel</th><th>Δ Cost</th><th>Rate Source</th><th>Rate Detail</th><th>Cases/wk</th><th>Liters/wk</th><th>Pallets/wk</th></tr></thead><tbody>${detailRows || '<tr><td colspan="27">No visible centers found.</td></tr>'}</tbody>`;
 }
 function updateScenarioSummary(rows, summaries){
   const totalStops=rows.length;
@@ -1607,7 +1686,7 @@ function updateScenarioSummary(rows, summaries){
   const currentCost=summaries.reduce((s,r)=>s+r.currentCost,0), newCost=summaries.reduce((s,r)=>s+r.newCost,0);
   const rates=getScenarioRates();
   const method = rates.pricingMethod === 'commodity' ? 'Rate Table mileage commodity matrix' : rates.pricingMethod === 'simple' ? 'simple $/mile override' : `Rate Table dedicated $/mile (${money2(DATA.rateTable?.dedicatedTransportationRatePerMile || 0)}/mile)`;
-  $('plcSummary').innerHTML = `<b>Scenario summary</b><br/>Routes created: <b>${fmt0(summaries.length)}</b> · Centers reassigned: <b>${fmt0(totalStops)}</b><br/>Scheduled Source Route Miles: <b>${fmtMiles(currentMiles)}</b> · Scenario Routed Miles: <b>${fmtMiles(newMiles)}</b> · Mileage Delta: <b>Validate</b><br/>Current linehaul: <b>${money2(currentLinehaul)}</b> → New linehaul: <b>${money2(newLinehaul)}</b> · Δ ${fmtDelta(newLinehaul-currentLinehaul,'money')}<br/>Current fuel: <b>${money2(currentFuel)}</b> → New fuel: <b>${money2(newFuel)}</b> · Δ ${fmtDelta(newFuel-currentFuel,'money')}<br/>Current cost: <b>${money2(currentCost)}</b> → New estimated cost: <b>${money2(newCost)}</b> · Δ ${fmtDelta(newCost-currentCost,'money')}<div class="mini-note">Current values use Active RFQ Baseline rows; route summary miles are scheduled stop-to-stop source route miles. Scenario routed miles and savings are directional estimates requiring validation. New scenario pricing method: <b>${method}</b>. Fuel uses <b>${(rates.fuelPct*100).toFixed(2)}%</b>, seeded from the workbook average fuel surcharge. Rate Table source: <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>.</div>`;
+  $('plcSummary').innerHTML = `<b>Scenario summary</b><br/>Routes created: <b>${fmt0(summaries.length)}</b> · Centers reassigned: <b>${fmt0(totalStops)}</b><br/>Full Scheduled Source Route Miles: <b>${fmtMiles(currentMiles)}</b> · Scenario Routed Miles: <b>${fmtMiles(newMiles)}</b> · Mileage Delta: <b>Validate</b><br/>Current linehaul: <b>${money2(currentLinehaul)}</b> → New linehaul: <b>${money2(newLinehaul)}</b> · Δ ${fmtDelta(newLinehaul-currentLinehaul,'money')}<br/>Current fuel: <b>${money2(currentFuel)}</b> → New fuel: <b>${money2(newFuel)}</b> · Δ ${fmtDelta(newFuel-currentFuel,'money')}<br/>Current cost: <b>${money2(currentCost)}</b> → New estimated cost: <b>${money2(newCost)}</b> · Δ ${fmtDelta(newCost-currentCost,'money')}<div class="mini-note">Current values use Active RFQ Baseline rows; route summary miles include route origin to first stop and last stop to destination PLC when those points are available. Scenario routed miles and savings are directional estimates requiring validation. New scenario pricing method: <b>${method}</b>. Fuel uses <b>${(rates.fuelPct*100).toFixed(2)}%</b>, seeded from the workbook average fuel surcharge. Rate Table source: <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>.</div>`;
 }
 function refreshPlayground(){
   clearAnimation();
@@ -1772,7 +1851,7 @@ function currentRouteTotals(route, stops){
   const currentLinehaul = cp.reduce((s,x)=>s+x.linehaul,0);
   const currentFuel = cp.reduce((s,x)=>s+x.fuel,0);
   const currentTotal = cp.reduce((s,x)=>s+x.total,0);
-  const currentMiles = scheduledRouteMilesValue(route, selectedScheduleWeek()) || routeScheduledSourceMiles(stops, route, selectedScheduleWeek());
+  const currentMiles = fullScheduledRouteMilesValue(route, selectedScheduleWeek()) || routeScheduledSourceMiles(stops, route, selectedScheduleWeek());
   const cases = stops.reduce((s,r)=>s+(Number(r.weeklyCases)||0),0);
   const liters = stops.reduce((s,r)=>s+(Number(r.weeklyLiters)||0),0);
   const pallets = baselinePalletsFromCases(cases);
@@ -1946,11 +2025,11 @@ function updateOptimizationKpis(rows){
 function updateOptimizationTable(rows, mode){
   const table = $('resultsTable');
   if(mode === 'sequence'){
-    table.innerHTML = `<thead><tr><th>Route</th><th>Recommended Design</th><th>New Route Name(s)</th><th>Current Endpoint PLC(s)</th><th>Proposed Endpoint PLC(s)</th><th>Stops</th><th>Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Estimated Mile Reduction</th><th>Suggested Stop Order</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.recommendationType}</td><td>${r.newRouteText}</td><td>${r.currentPLCText}</td><td>${r.recommendedPLCText}</td><td>${fmt0(r.stopCount)}</td><td>${formatScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td><b>Validate</b></td><td>${r.stopOrderText || 'No coordinate sequence available'}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="11">No matching route sequence opportunities.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Route</th><th>Recommended Design</th><th>New Route Name(s)</th><th>Current Endpoint PLC(s)</th><th>Proposed Endpoint PLC(s)</th><th>Stops</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Estimated Mile Reduction</th><th>Suggested Stop Order</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.recommendationType}</td><td>${r.newRouteText}</td><td>${r.currentPLCText}</td><td>${r.recommendedPLCText}</td><td>${fmt0(r.stopCount)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td><b>Validate</b></td><td>${r.stopOrderText || 'No coordinate sequence available'}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="11">No matching route sequence opportunities.</td></tr>'}</tbody>`;
   } else if(mode === 'routes'){
-    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Current Linehaul</th><th>New Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Current Total</th><th>New Total</th><th>Weekly Savings</th><th>Annual Savings</th><th>Rate Source</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(r.currentLinehaul)}</td><td>${money2(r.newLinehaul)}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${r.rateDetail}</td></tr>`).join('') || '<tr><td colspan="18">No matching route opportunities.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Current Linehaul</th><th>New Linehaul</th><th>Current Fuel</th><th>New Fuel</th><th>Current Total</th><th>New Total</th><th>Weekly Savings</th><th>Annual Savings</th><th>Rate Source</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${money2(r.currentLinehaul)}</td><td>${money2(r.newLinehaul)}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${r.rateDetail}</td></tr>`).join('') || '<tr><td colspan="18">No matching route opportunities.</td></tr>'}</tbody>`;
   } else {
-    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
+    table.innerHTML = `<thead><tr><th>Current Route Name</th><th>Current Endpoint PLC(s)</th><th>Recommended Route Design</th><th>Proposed Route Name(s)</th><th>States</th><th>Stops</th><th>Week</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Current Fuel</th><th>New Fuel</th><th>Fuel Saved</th><th>Current Total Cost</th><th>New Total Cost</th><th>Weekly Savings</th><th>Annual Savings</th><th>Current $/Case</th><th>New $/Case</th><th>Validation Note</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.route}</b></td><td>${r.currentPLCText}</td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${r.newRouteText}</td><td>${r.allStates.join(', ')}</td><td>${fmt0(r.stopCount)}</td><td>${r.weekText}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${money2(r.currentFuel)}</td><td>${money2(r.newFuel)}</td><td>${fmtDelta(-r.fuelSavings,'money').replace('+','')}</td><td>${money2(r.currentTotal)}</td><td>${money2(r.newTotal)}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${money2(r.currentCostPerCase)}</td><td>${money2(r.newCostPerCase)}</td><td>${r.validationNote}</td></tr>`).join('') || '<tr><td colspan="22">No route-level optimization recommendations. Adjust filters or clear minimum savings.</td></tr>'}</tbody>`;
   }
 }
 function refreshOptimization(){
@@ -2005,7 +2084,7 @@ function refreshOptimization(){
   const fuelSavings = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
   const relay = rows.filter(r=>r.isRelay).length;
-  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Validate</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Estimated annual opportunity: <b>${money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Opportunities are route-level: scheduled source route miles vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
+  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Validate</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Estimated annual opportunity: <b>${money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Opportunities are route-level: full scheduled source route miles vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
   $('mapTitle').textContent = `Route Optimization Engine: ${mode === 'routes' ? 'Route Summary' : mode === 'sequence' ? 'Stop Sequence' : 'Route Rebuild Recommendations'}`;
   $('visiblePill').textContent = `${fmt0(rows.length)} route groups`;
   if(bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:6});
@@ -2022,10 +2101,10 @@ function populateOptimizationControls(){
 }
 function exportOptimizationCsv(){
   const rows = lastOptimizationRows.length ? lastOptimizationRows : filteredOptimizationRows();
-  const header=['Current Route Name','Current Endpoint PLC(s)','Recommended Route Design','Proposed Route Name(s)','States','Stops','Week Pattern','Cases Weekly','Liters Weekly','Pallets Weekly','Scheduled Source Route Miles','Scenario Routed Miles','Mileage Delta','Current Linehaul','New Linehaul','Current Fuel','New Fuel','Fuel Saved','Current Total Cost','New Total Cost','Weekly Opportunity','Annual Opportunity','Current Cost Per Case','New Cost Per Case','Rate Source','Rate Detail','Validation Note','Suggested Stop Order'];
+  const header=['Current Route Name','Current Endpoint PLC(s)','Recommended Route Design','Proposed Route Name(s)','States','Stops','Week Pattern','Cases Weekly','Liters Weekly','Pallets Weekly','Full Scheduled Source Route Miles','Scenario Routed Miles','Mileage Delta','Current Linehaul','New Linehaul','Current Fuel','New Fuel','Fuel Saved','Current Total Cost','New Total Cost','Weekly Opportunity','Annual Opportunity','Current Cost Per Case','New Cost Per Case','Rate Source','Rate Detail','Validation Note','Suggested Stop Order'];
   const lines=[header.join(',')];
   for(const r of rows){
-    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),formatScheduledRouteMiles(r.route, selectedScheduleWeek()),fmt1(r.newMiles),'Validate',fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
+    const vals=[r.route,r.currentPLCText,r.recommendationType,r.newRouteText,r.allStates.join('; '),r.stopCount,r.weekText,fmt1(r.cases),fmt1(r.liters),fmt1(r.pallets),formatFullScheduledRouteMiles(r.route, selectedScheduleWeek()),fmt1(r.newMiles),'Validate',fmt1(r.currentLinehaul),fmt1(r.newLinehaul),fmt1(r.currentFuel),fmt1(r.newFuel),fmt1(r.fuelSavings),fmt1(r.currentTotal),fmt1(r.newTotal),fmt1(r.weeklySavings),fmt1(r.annualSavings),fmt1(r.currentCostPerCase),fmt1(r.newCostPerCase),r.rateSource,r.rateDetail,r.validationNote,r.stopOrderText];
     lines.push(vals.map(v=>`"${String(v ?? '').replaceAll('"','""')}"`).join(','));
   }
   const blob=new Blob([lines.join('\n')], {type:'text/csv'});
@@ -2791,7 +2870,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(!r) return 'Not started';
     const actual = (r.segments||[]).some(s=>String(s.routeBasis||'').toLowerCase().includes('actual'));
     if(actual) return 'High · actual truck route loaded';
-    if(r.currentMiles && r.newMiles) return 'Medium · Scheduled Source Route Miles + Scenario Routed Miles; Mileage Delta requires validation';
+    if(r.currentMiles && r.newMiles) return 'Medium · Full Scheduled Source Route Miles + Scenario Routed Miles; Mileage Delta requires validation';
     return 'Low · missing route or cost detail';
   }
   function trailerLoadText(pallets){
@@ -2837,7 +2916,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       <div class="opt-decision-card"><h3>Current route</h3><div class="opt-big-number">${esc(r.route)}</div><div class="opt-card-grid-sm">
         <div class="opt-mini-metric">Endpoint PLC(s)<b>${esc(r.currentPLCText)}</b></div>
         <div class="opt-mini-metric">Stops<b>${fmt0(r.stopCount)}</b></div>
-        <div class="opt-mini-metric">Scheduled Source Route Miles<b>${formatScheduledRouteMiles(r.route, selectedScheduleWeek())}</b></div>
+        <div class="opt-mini-metric">Full Scheduled Source Route Miles<b>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</b></div>
         <div class="opt-mini-metric">Weekly cost<b>${money2(r.currentTotal)}</b></div>
         <div class="opt-mini-metric">Cases / Pallets<b>${fmt1(r.cases)} / ${fmt1(r.pallets)}</b></div>
         <div class="opt-mini-metric">Trailer load<b>${trailerLoadText(r.pallets)}</b></div>
@@ -2937,7 +3016,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       return;
     }
     if(!selected && window.codyOptShowAllRoutes){
-      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
+      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Validate'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
       return;
     }
     const chunks = rows.map(r=>{
@@ -3148,7 +3227,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const currentLinehaul = cp.reduce((s,x)=>s+x.linehaul,0);
     const currentFuel = cp.reduce((s,x)=>s+x.fuel,0);
     const currentTotal = cp.reduce((s,x)=>s+x.total,0);
-    const currentMiles = scheduledRouteMilesValue(route, selectedScheduleWeek()) || routeScheduledSourceMiles(stops, route, selectedScheduleWeek());
+    const currentMiles = fullScheduledRouteMilesValue(route, selectedScheduleWeek()) || routeScheduledSourceMiles(stops, route, selectedScheduleWeek());
     const cases = stops.reduce((s,r)=>s+(Number(r.weeklyCases)||0),0);
     const liters = stops.reduce((s,r)=>s+(Number(r.weeklyLiters)||0),0);
     const pallets = palletsFromCases(cases);
@@ -3596,7 +3675,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     setKpiLabel('kpiCases', 'Weekly Cases');
     setKpiLabel('kpiLiters', 'Weekly Liters');
     setKpiLabel('kpiPallets', 'Weekly Pallets');
-    setKpiLabel('kpiMiles', 'Scheduled Source Route Miles');
+    setKpiLabel('kpiMiles', 'Full Scheduled Source Route Miles');
     setKpiLabel('kpiCost', 'Current Weekly Cost');
     setKpiLabel('kpiCostCase', 'Cost / Case');
     $('kpiCenters').textContent = k ? '1' : '0';
@@ -3615,7 +3694,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     setKpiLabel('kpiCases', 'Total Weekly Cases');
     setKpiLabel('kpiLiters', 'Total Weekly Liters');
     setKpiLabel('kpiPallets', 'Total Weekly Pallets');
-    setKpiLabel('kpiMiles', 'Scheduled Source Route Miles');
+    setKpiLabel('kpiMiles', 'Full Scheduled Source Route Miles');
     setKpiLabel('kpiCost', 'Total Current Weekly Cost');
     setKpiLabel('kpiCostCase', 'Portfolio Cost / Case');
     $('kpiCenters').textContent = fmt0(k.routeCount);
@@ -3794,7 +3873,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     }
     if(!rows.length){ table.innerHTML=`<tbody><tr><td><div class="opt-empty-state"><h2>No matching routes</h2><p>Reset filters or choose a different route. Opportunities are operational estimates only.</p></div></td></tr></tbody>`; return; }
     if(!selected && window.codyOptShowAllRoutes){
-      const headers=['Route','Action / Recommendation','Origin','Trailer','Current PLC','Proposed Route / PLC','Scheduled Source Route Miles','Scenario Routed Miles','Mileage Basis','Mileage Delta','Current Weekly Cost','Proposed Weekly Cost','Weekly Opportunity','Annual Opportunity','Weekly Cases','Weekly Pallets','Pallet Utilization'];
+      const headers=['Route','Action / Recommendation','Origin','Trailer','Current PLC','Proposed Route / PLC','Full Scheduled Source Route Miles','Scenario Routed Miles','Mileage Basis','Mileage Delta','Current Weekly Cost','Proposed Weekly Cost','Weekly Opportunity','Annual Opportunity','Weekly Cases','Weekly Pallets','Pallet Utilization'];
       table.innerHTML=`<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>{
         const k=getRouteKpis(r); const v=validationWarningsForRoute(r.route,r.cases,r.newMiles); const origin=originForRoute(r.route,r.stops);
         return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft · ${esc2(v.trailer.label)}</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${formatMiles(k.currentSourceMiles)}</td><td>${formatMiles(k.proposedScenarioMiles)}</td><td>${esc2(k.mileageBasisStatus)}</td><td>${formatMileageDelta(k)}</td><td>${formatMoney(k.currentWeeklyCost)}</td><td>${formatMoney(k.proposedWeeklyCost)}</td><td>${formatMoney(k.weeklyOpportunity)}</td><td><b>${formatMoney(k.annualOpportunity)}</b></td><td>${formatNumber(k.weeklyCases)}</td><td>${formatNumber(k.weeklyPallets)}</td><td>${esc2(k.palletStatus)} · ${fmt1(k.palletUtilizationPercent)}%</td></tr>`;
