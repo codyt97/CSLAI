@@ -53,6 +53,14 @@ function td(value, className = '') {
   return `<td${className ? ` class="${className}"` : ''}>${esc(value)}</td>`;
 }
 
+function centerKey(value) {
+  return String(value ?? '').trim();
+}
+
+function unavailable(value) {
+  return value === null || value === undefined || value === '' ? 'Unavailable' : value;
+}
+
 function currentPlcForRoute(row, routeLookup) {
   if (routeLookup.has(row.route)) return routeLookup.get(row.route).currentEndpointPLC;
   const source = [...routeLookup.values()].find((route) => String(row.route || '').startsWith(route.routeName));
@@ -82,6 +90,144 @@ function routeRows(routeComparison, routeLookup) {
       ${td(`${num(utilization)}%`)}
     </tr>`;
   }).join('');
+}
+
+function baselineNodeLookup(nodes = []) {
+  const lookup = new Map();
+  for (const node of nodes || []) {
+    const keys = [node.centerNumber, node.id, node.centerName].map(centerKey).filter(Boolean);
+    for (const key of keys) if (!lookup.has(key)) lookup.set(key, node);
+  }
+  return lookup;
+}
+
+function frequencyChangeLookup(changes = []) {
+  const lookup = new Map();
+  for (const row of changes || []) {
+    const keys = [row.centerNumber, row.id, row.centerName].map(centerKey).filter(Boolean);
+    for (const key of keys) if (!lookup.has(key)) lookup.set(key, row);
+  }
+  return lookup;
+}
+
+function assignmentStatus({ node, proposedPLC, proposedRoute, proposedFrequency }) {
+  const statuses = [];
+  if (!node) statuses.push('New proposed route / paired route impact');
+  if (node && proposedPLC && proposedPLC !== node.currentPLC) statuses.push('PLC reassigned');
+  if (node && proposedRoute && proposedRoute !== node.currentRoute) statuses.push('Route reassigned');
+  if (node && proposedFrequency && proposedFrequency !== node.currentPickupFrequency) statuses.push('Requires validation');
+  return statuses.length ? statuses.join('; ') : 'Unchanged';
+}
+
+function buildAssignmentDetails(routeStopSequences = [], nodes = [], frequencyChanges = []) {
+  const nodeLookup = baselineNodeLookup(nodes);
+  const freqLookup = frequencyChangeLookup(frequencyChanges);
+  const rows = [];
+  for (const route of routeStopSequences || []) {
+    for (const stop of route.stops || []) {
+      const node = nodeLookup.get(centerKey(stop.centerNumber)) || nodeLookup.get(centerKey(stop.centerName));
+      const freqChange = freqLookup.get(centerKey(stop.centerNumber)) || freqLookup.get(centerKey(stop.centerName));
+      const weeklyCases = Number(stop.casesWeek ?? node?.weeklyCases ?? freqChange?.currentWeeklyCases ?? 0);
+      const proposedFrequency = freqChange?.proposedPickupFrequency || stop.frequency || node?.currentPickupFrequency || '';
+      rows.push({
+        centerName: stop.centerName || node?.centerName || 'Unavailable',
+        centerId: stop.centerNumber || node?.centerNumber || node?.id || 'Unavailable',
+        city: stop.city || node?.city || 'Unavailable',
+        state: stop.state || node?.state || 'Unavailable',
+        currentPLC: node?.currentPLC || freqChange?.currentPLC || 'Unavailable',
+        proposedPLC: route.proposedPLC || freqChange?.proposedPLC || 'Requires validation',
+        currentRoute: node?.currentRoute || freqChange?.currentRoute || 'Unavailable',
+        proposedRoute: route.routeName || freqChange?.proposedRoute || 'Requires validation',
+        pickupFrequency: proposedFrequency || 'Unavailable',
+        weeklyCases,
+        weeklyPallets: palletsFromCases(weeklyCases),
+        assignmentStatus: assignmentStatus({ node, proposedPLC: route.proposedPLC, proposedRoute: route.routeName, proposedFrequency })
+      });
+    }
+  }
+  return rows;
+}
+
+function assignmentDetailRows(rows = []) {
+  if (!rows.length) return '<tr><td colspan="12">Center-level proposed assignment details unavailable for this scenario output.</td></tr>';
+  return rows.map((row) => `<tr>
+    ${td(row.centerName)}
+    ${td(row.centerId)}
+    ${td(row.city)}
+    ${td(row.state)}
+    ${td(row.currentPLC)}
+    ${td(row.proposedPLC)}
+    ${td(row.currentRoute)}
+    ${td(row.proposedRoute)}
+    ${td(row.pickupFrequency)}
+    ${td(num(row.weeklyCases))}
+    ${td(num(row.weeklyPallets))}
+    ${td(row.assignmentStatus)}
+  </tr>`).join('');
+}
+
+function plcReassignmentRows(rows = []) {
+  const changed = (rows || []).filter((row) => row && row.currentPLC !== row.proposedPLC);
+  if (!changed.length) return '<tr><td colspan="9">No PLC reassignment details available for this scenario output.</td></tr>';
+  return changed.map((row) => {
+    const weeklyCases = Number(row.currentWeeklyCases || row.proposedWeeklyCases || 0);
+    return `<tr>
+      ${td(`${row.centerNumber || ''} ${row.centerName || ''}`.trim() || 'Unavailable')}
+      ${td(`${unavailable(row.city)}, ${unavailable(row.state)}`)}
+      ${td(unavailable(row.currentPLC))}
+      ${td(unavailable(row.proposedPLC))}
+      ${td(unavailable(row.currentRoute))}
+      ${td(unavailable(row.proposedRoute))}
+      ${td(num(weeklyCases))}
+      ${td(num(palletsFromCases(weeklyCases)))}
+      ${td(row.reason || 'Requires McKesson / RFQ validation')}
+    </tr>`;
+  }).join('');
+}
+
+function frequencyChangeRows(rows = []) {
+  const changed = (rows || []).filter((row) => row && row.currentPickupFrequency !== row.proposedPickupFrequency);
+  if (!changed.length) return '<tr><td colspan="7">Frequency change details unavailable — current frequency shown only.</td></tr>';
+  return changed.map((row) => {
+    const weeklyCases = Number(row.currentWeeklyCases || row.proposedWeeklyCases || 0);
+    return `<tr>
+      ${td(`${row.centerNumber || ''} ${row.centerName || ''}`.trim() || 'Unavailable')}
+      ${td(`${unavailable(row.city)}, ${unavailable(row.state)}`)}
+      ${td(unavailable(row.currentPickupFrequency))}
+      ${td(unavailable(row.proposedPickupFrequency))}
+      ${td(num(weeklyCases))}
+      ${td(num(palletsFromCases(weeklyCases)))}
+      ${td(row.reason || 'Requires pickup frequency, cold-chain, storage, and McKesson validation')}
+    </tr>`;
+  }).join('');
+}
+
+function routeStopSequenceRows(routeStopSequences = []) {
+  const rows = [];
+  for (const route of routeStopSequences || []) {
+    const stops = (route.stops || []).slice();
+    const hasStopOrder = stops.some((stop) => Number.isFinite(Number(stop.stopNumber)));
+    stops.sort((a, b) => {
+      if (hasStopOrder) return (Number(a.stopNumber) || 9999) - (Number(b.stopNumber) || 9999);
+      return `${a.state || ''}|${a.city || ''}|${a.centerName || ''}`.localeCompare(`${b.state || ''}|${b.city || ''}|${b.centerName || ''}`);
+    });
+    for (const stop of stops) {
+      const weeklyCases = Number(stop.casesWeek || 0);
+      rows.push(`<tr>
+        ${td(route.routeName || 'Unavailable')}
+        ${td(route.proposedPLC || 'Requires validation')}
+        ${td(hasStopOrder ? stop.stopNumber : 'Stop order unavailable — sorted for review only')}
+        ${td(`${stop.centerNumber || ''} ${stop.centerName || ''}`.trim() || 'Unavailable')}
+        ${td(`${unavailable(stop.city)}, ${unavailable(stop.state)}`)}
+        ${td(unavailable(stop.frequency))}
+        ${td(num(weeklyCases))}
+        ${td(num(palletsFromCases(weeklyCases)))}
+        ${td(numOrMessage(Number(stop.oneWayMiles), 'Unavailable'))}
+        ${td(moneyOrMessage(Number(stop.costWeek), 'Unavailable'), 'money')}
+      </tr>`);
+    }
+  }
+  return rows.join('') || '<tr><td colspan="10">Route stop sequence details unavailable for this scenario output.</td></tr>';
 }
 
 function optimizationTotals(searchParams) {
@@ -119,7 +265,9 @@ export async function GET(req) {
   const brief = buildScenarioBriefData(mode);
   const s = brief.scenario;
   const generatedAt = new Date(brief.generatedAt || Date.now()).toLocaleString('en-US');
-  const routeLookup = new Map(buildCurrentNetworkBaseline().routeGroups.map((route) => [route.routeName, route]));
+  const baseline = buildCurrentNetworkBaseline();
+  const routeLookup = new Map(baseline.routeGroups.map((route) => [route.routeName, route]));
+  const assignmentDetails = buildAssignmentDetails(brief.routeStopSequences || s.proposedStopSequences, baseline.nodes, brief.frequencyChanges || s.centersChangedFrequency);
   const optTotals = optimizationTotals(searchParams);
   const isOptimizationReport = optTotals !== null;
   const hasOptimizationTotals = Boolean(optTotals?.available);
@@ -224,10 +372,39 @@ export async function GET(req) {
     </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="12">No route comparison rows available.</td></tr>'}</tbody></table>
   </section>
 
+  <section class="page-break">
+    <h2>Center-to-PLC / Route Assignment Detail</h2>
+    <p class="small">Which plasma center goes where. Weekly pallets are calculated as weekly cases / 70. Missing proposed fields are shown as Unavailable or Requires validation.</p>
+    <table><thead><tr>
+      <th>Center name</th><th>Center ID</th><th>City</th><th>State</th><th>Current PLC</th><th>Proposed PLC</th><th>Current route / McKesson route</th><th>Proposed route</th><th>Pickup frequency</th><th>Weekly cases</th><th>Weekly pallets = weekly cases / 70</th><th>Assignment status</th>
+    </tr></thead><tbody>${assignmentDetailRows(assignmentDetails)}</tbody></table>
+  </section>
+
+  <section class="page-break">
+    <h2>PLC Reassignments</h2>
+    <table><thead><tr>
+      <th>Center</th><th>City, State</th><th>From PLC</th><th>To PLC</th><th>Current route</th><th>Proposed route</th><th>Weekly cases</th><th>Weekly pallets</th><th>Validation status</th>
+    </tr></thead><tbody>${plcReassignmentRows(brief.plcReassignments || s.centersReassignedPLC)}</tbody></table>
+  </section>
+
+  <section>
+    <h2>Frequency Changes</h2>
+    <table><thead><tr>
+      <th>Center</th><th>City, State</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Validation note</th>
+    </tr></thead><tbody>${frequencyChangeRows(brief.frequencyChanges || s.centersChangedFrequency)}</tbody></table>
+  </section>
+
+  <section class="page-break">
+    <h2>Route Stop Sequences</h2>
+    <table><thead><tr>
+      <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Workbook/source one-way miles</th><th>Estimated weekly cost</th>
+    </tr></thead><tbody>${routeStopSequenceRows(brief.routeStopSequences || s.proposedStopSequences)}</tbody></table>
+  </section>
+
   <section>
     <h2>Validation Notes</h2>
     <ul class="notes">
-      <li>Savings are directional, not guaranteed.</li>
+      <li>Opportunities are directional estimates and require McKesson / RFQ validation.</li>
       <li>Current miles and proposed miles may use different basis.</li>
       <li>McKesson validation required.</li>
       <li>RFQ / contract validation required.</li>
