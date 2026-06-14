@@ -168,7 +168,7 @@ function assignmentDetailRows(rows = []) {
 
 function plcReassignmentRows(rows = []) {
   const changed = (rows || []).filter((row) => row && row.currentPLC !== row.proposedPLC);
-  if (!changed.length) return '<tr><td colspan="9">No PLC reassignment details available for this scenario output.</td></tr>';
+  if (!changed.length) return '<tr><td colspan="8">No PLC reassignment details available for this scenario output.</td></tr>';
   return changed.map((row) => {
     const weeklyCases = Number(row.currentWeeklyCases || row.proposedWeeklyCases || 0);
     return `<tr>
@@ -180,7 +180,6 @@ function plcReassignmentRows(rows = []) {
       ${td(unavailable(row.proposedRoute))}
       ${td(num(weeklyCases))}
       ${td(num(palletsFromCases(weeklyCases)))}
-      ${td(row.reason || 'Requires McKesson / RFQ validation')}
     </tr>`;
   }).join('');
 }
@@ -228,6 +227,29 @@ function routeStopSequenceRows(routeStopSequences = []) {
     }
   }
   return rows.join('') || '<tr><td colspan="10">Route stop sequence details unavailable for this scenario output.</td></tr>';
+}
+
+function calculationValue(value, formatter = money) {
+  return Number.isFinite(value) ? formatter(value) : 'Unavailable';
+}
+
+function calculationMethodRows(report) {
+  const currentWeekly = Number(report.currentWeeklyCost);
+  const proposedWeekly = Number(report.proposedWeeklyCost);
+  const weeklyOpportunity = Number(report.weeklyOpportunity);
+  const weeklyCases = Number(report.weeklyCases);
+  const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
+  const rows = [
+    ['Current Weekly Cost', calculationValue(currentWeekly)],
+    ['Proposed Weekly Cost', calculationValue(proposedWeekly)],
+    ['Weekly Opportunity = Current Weekly Cost - Proposed Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
+    ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × 52 = ${money(weeklyOpportunity * 52)}` : 'Unavailable'],
+    ['Proposed Annual Cost = Proposed Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
+    ['Current Annual Cost = Current Weekly Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
+    ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
+    ['Pallet Utilization = Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable']
+  ];
+  return rows.map(([label, value]) => `<tr>${td(label)}${td(value)}</tr>`).join('');
 }
 
 function optimizationTotals(searchParams) {
@@ -336,7 +358,7 @@ export async function GET(req) {
   <header>
     <h1>${esc(scenarioName)}</h1>
     <div class="small">Generated date: ${esc(generatedAt)}</div>
-    <div class="status">Directional estimate — requires McKesson / RFQ validation</div>
+    <div class="status">Directional estimate</div>
   </header>
 
   <section>
@@ -365,6 +387,11 @@ export async function GET(req) {
     </tbody></table>
   </section>
 
+  <section>
+    <h2>Calculation Method</h2>
+    <table><thead><tr><th>Formula</th><th>Report values used</th></tr></thead><tbody>${calculationMethodRows(report)}</tbody></table>
+  </section>
+
   <section class="page-break">
     <h2>Route-by-Route Comparison</h2>
     <table><thead><tr>
@@ -383,7 +410,7 @@ export async function GET(req) {
   <section class="page-break">
     <h2>PLC Reassignments</h2>
     <table><thead><tr>
-      <th>Center</th><th>City, State</th><th>From PLC</th><th>To PLC</th><th>Current route</th><th>Proposed route</th><th>Weekly cases</th><th>Weekly pallets</th><th>Validation status</th>
+      <th>Center</th><th>City, State</th><th>From PLC</th><th>To PLC</th><th>Current route</th><th>Proposed route</th><th>Weekly cases</th><th>Weekly pallets</th>
     </tr></thead><tbody>${plcReassignmentRows(brief.plcReassignments || s.centersReassignedPLC)}</tbody></table>
   </section>
 
@@ -399,19 +426,6 @@ export async function GET(req) {
     <table><thead><tr>
       <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Workbook/source one-way miles</th><th>Estimated weekly cost</th>
     </tr></thead><tbody>${routeStopSequenceRows(brief.routeStopSequences || s.proposedStopSequences)}</tbody></table>
-  </section>
-
-  <section>
-    <h2>Validation Notes</h2>
-    <ul class="notes">
-      <li>Opportunities are directional estimates and require McKesson / RFQ validation.</li>
-      <li>Current miles and proposed miles may use different basis.</li>
-      <li>McKesson validation required.</li>
-      <li>RFQ / contract validation required.</li>
-      <li>Cold-chain and site storage validation required for frequency changes.</li>
-      ${isOptimizationReport ? '<li>Portfolio opportunity totals come from the Optimization Engine visible summary when available; route rows with $0.00 current cost remain row-level estimates and are not recomputed into a separate portfolio total in this report.</li>' : ''}
-    </ul>
-    <p class="small">Pallets are calculated as weekly cases / 70. Capacity uses 24 pallets for a 48-ft reefer. This report is print-ready HTML; use browser Print and Save as PDF.</p>
   </section>
   </body></html>`;
 
