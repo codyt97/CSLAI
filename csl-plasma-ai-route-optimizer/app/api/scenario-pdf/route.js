@@ -49,19 +49,6 @@ function opportunity(current, proposed) {
   return (Number(current) || 0) - (Number(proposed) || 0);
 }
 
-function impliedScenarioRate(proposedCost, proposedMiles) {
-  const cost = Number(proposedCost);
-  const miles = Number(proposedMiles);
-  if (!Number.isFinite(cost) || !Number.isFinite(miles) || miles <= 0) return null;
-  return cost / miles;
-}
-
-function proposedCostFormula(proposedCost, proposedMiles) {
-  const rate = impliedScenarioRate(proposedCost, proposedMiles);
-  if (rate === null) return 'Unavailable';
-  return `${num(proposedMiles)} × ${money(rate)} = ${money(proposedCost)}`;
-}
-
 function td(value, className = '') {
   return `<td${className ? ` class="${className}"` : ''}>${esc(value)}</td>`;
 }
@@ -88,7 +75,6 @@ function routeRows(routeComparison, routeLookup) {
     const utilization = pallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets * 100;
     const proposedOnly = (Number(row.currentCost) || 0) <= 0 || (Number(row.currentMiles) || 0) <= 0;
     const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC requires validation'}${proposedOnly ? ' — Proposed-only / paired route impact — not standalone portfolio savings' : ''}`;
-    const impliedRate = impliedScenarioRate(row.proposedCost, row.proposedMiles);
     return `<tr>
       ${td(row.route)}
       ${td(currentPlcForRoute(row, routeLookup))}
@@ -97,8 +83,6 @@ function routeRows(routeComparison, routeLookup) {
       ${td(num(row.proposedMiles))}
       ${td(money(row.currentCost), 'money')}
       ${td(money(row.proposedCost), 'money')}
-      ${td(impliedRate === null ? 'Unavailable' : money(impliedRate), 'money')}
-      ${td(proposedCostFormula(row.proposedCost, row.proposedMiles))}
       ${td(money(weeklyOpportunity), 'money')}
       ${td(money(weeklyOpportunity * 52), 'money')}
       ${td(num(cases))}
@@ -256,31 +240,17 @@ function calculationMethodRows(report) {
   const weeklyCases = Number(report.weeklyCases);
   const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
   const rows = [
-    ['Current Weekly Cost', calculationValue(currentWeekly)],
-    ['Proposed Weekly Cost', calculationValue(proposedWeekly)],
+    ['Current Weekly Cost = Sum of visible Optimization Engine current weekly costs', calculationValue(currentWeekly)],
+    ['Proposed Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
+    ['Proposed Weekly Cost basis', "Proposed weekly cost is the Optimization Engine scenario total passed from the visible table. It is built from each route's scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
     ['Weekly Opportunity = Current Weekly Cost - Proposed Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
     ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × 52 = ${money(weeklyOpportunity * 52)}` : 'Unavailable'],
-    ['Proposed Annual Cost = Proposed Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
     ['Current Annual Cost = Current Weekly Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
+    ['Proposed Annual Cost = Proposed Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
     ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
     ['Pallet Utilization = Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable']
   ];
   return rows.map(([label, value]) => `<tr>${td(label)}${td(value)}</tr>`).join('');
-}
-
-function proposedWeeklyCostFormulaRows(routeComparison = []) {
-  if (!routeComparison.length) return '<tr><td colspan="3">Unavailable</td></tr>';
-  return routeComparison.map((row) => {
-    const rate = impliedScenarioRate(row.proposedCost, row.proposedMiles);
-    const rateFormula = rate === null
-      ? 'Unavailable'
-      : `${money(row.proposedCost)} ÷ ${num(row.proposedMiles)} miles = ${money(rate)} per mile`;
-    return `<tr>
-      ${td(row.route)}
-      ${td(rateFormula)}
-      ${td(proposedCostFormula(row.proposedCost, row.proposedMiles))}
-    </tr>`;
-  }).join('');
 }
 
 function optimizationTotals(searchParams) {
@@ -421,16 +391,13 @@ export async function GET(req) {
   <section>
     <h2>Calculation Method</h2>
     <table><thead><tr><th>Formula</th><th>Report values used</th></tr></thead><tbody>${calculationMethodRows(report)}</tbody></table>
-    <h3>Proposed Weekly Cost Formula</h3>
-    <p class="small">Proposed Weekly Cost = Scenario Routed Miles × Implied Scenario $/Mile. Implied Scenario $/Mile = Proposed Weekly Cost ÷ Scenario Routed Miles.</p>
-    <table><thead><tr><th>Route</th><th>Implied Scenario $/Mile</th><th>Proposed Cost Formula</th></tr></thead><tbody>${proposedWeeklyCostFormulaRows(s.routeComparison)}</tbody></table>
   </section>
 
   <section class="page-break">
     <h2>Route-by-Route Comparison</h2>
     <table><thead><tr>
-      <th>Route name</th><th>Current PLC</th><th>Proposed route / PLC</th><th>Workbook Allocated Source Miles</th><th>Scenario Routed Miles</th><th>Current weekly cost</th><th>Proposed weekly cost</th><th>Implied Scenario $/Mile</th><th>Proposed Cost Formula</th><th>Weekly opportunity</th><th>Annual opportunity</th><th>Weekly cases</th><th>Weekly pallets</th><th>Pallet utilization using 24-pallet 48-ft capacity</th>
-    </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="14">No route comparison rows available.</td></tr>'}</tbody></table>
+      <th>Route name</th><th>Current PLC</th><th>Proposed route / PLC</th><th>Workbook Allocated Source Miles</th><th>Scenario Routed Miles</th><th>Current weekly cost</th><th>Proposed weekly cost</th><th>Weekly opportunity</th><th>Annual opportunity</th><th>Weekly cases</th><th>Weekly pallets</th><th>Pallet utilization using 24-pallet 48-ft capacity</th>
+    </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="12">No route comparison rows available.</td></tr>'}</tbody></table>
   </section>
 
   <section class="page-break">
