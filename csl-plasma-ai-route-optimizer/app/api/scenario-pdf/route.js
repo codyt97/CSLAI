@@ -149,6 +149,7 @@ function buildAssignmentDetails(routeStopSequences = [], nodes = [], frequencyCh
       const node = nodeLookup.get(centerKey(stop.centerNumber)) || nodeLookup.get(centerKey(stop.centerName));
       const freqChange = freqLookup.get(centerKey(stop.centerNumber)) || freqLookup.get(centerKey(stop.centerName));
       const weeklyCases = Number(stop.casesWeek ?? node?.weeklyCases ?? freqChange?.currentWeeklyCases ?? 0);
+      const weeklyLiters = Number(stop.litersWeek ?? stop.weeklyLiters ?? node?.weeklyLiters ?? node?.sourceRecord?.weeklyLiters ?? freqChange?.currentWeeklyLiters);
       const proposedFrequency = freqChange?.proposedPickupFrequency || stop.frequency || node?.currentPickupFrequency || '';
       rows.push({
         centerName: stop.centerName || node?.centerName || 'Unavailable',
@@ -160,6 +161,7 @@ function buildAssignmentDetails(routeStopSequences = [], nodes = [], frequencyCh
         currentRoute: node?.currentRoute || freqChange?.currentRoute || 'Unavailable',
         proposedRoute: route.routeName || freqChange?.proposedRoute || 'Review needed',
         pickupFrequency: proposedFrequency || 'Unavailable',
+        weeklyLiters: Number.isFinite(weeklyLiters) ? weeklyLiters : null,
         weeklyCases,
         weeklyPallets: palletsFromCases(weeklyCases),
         assignmentStatus: assignmentStatus({ node, proposedPLC: route.proposedPLC, proposedRoute: route.routeName, proposedFrequency })
@@ -250,38 +252,57 @@ function routeStopSequenceRows(routeStopSequences = []) {
   return rows.join('') || '<tr><td colspan="10">Route stop sequence details unavailable for this scenario output.</td></tr>';
 }
 
-function distributionSplitRows(nodes = [], assignmentDetails = [], routeComparison = []) {
-  const currentCounts = new Map();
-  const proposedCounts = new Map();
-  const deltaByPlc = new Map();
-  for (const node of nodes || []) {
-    const plc = unavailable(node.currentPLC);
-    currentCounts.set(plc, (currentCounts.get(plc) || 0) + 1);
+function distributionSplitRows(nodes = [], assignmentDetails = []) {
+  const makeBucket = () => ({ centers: 0, liters: 0, hasLiters: false, cases: 0 });
+  const addToBucket = (map, plc, weeklyLiters, weeklyCases) => {
+    const key = unavailable(plc);
+    const bucket = map.get(key) || makeBucket();
+    bucket.centers += 1;
+    const liters = Number(weeklyLiters);
+    if (Number.isFinite(liters)) {
+      bucket.liters += liters;
+      bucket.hasLiters = true;
+    }
+    const cases = Number(weeklyCases);
+    if (Number.isFinite(cases)) bucket.cases += cases;
+    map.set(key, bucket);
+  };
+
+  const currentBuckets = new Map();
+  const proposedBuckets = new Map();
+  const currentRows = (assignmentDetails || []).length ? assignmentDetails : (nodes || []);
+
+  for (const row of currentRows || []) {
+    addToBucket(
+      currentBuckets,
+      row.currentPLC,
+      row.weeklyLiters ?? row.sourceRecord?.weeklyLiters,
+      row.weeklyCases
+    );
   }
   for (const row of assignmentDetails || []) {
-    const plc = unavailable(row.proposedPLC);
-    proposedCounts.set(plc, (proposedCounts.get(plc) || 0) + 1);
+    addToBucket(proposedBuckets, row.proposedPLC, row.weeklyLiters, row.weeklyCases);
   }
-  for (const row of routeComparison || []) {
-    const plc = unavailable(row.plc);
-    const delta = Number(row.currentCost) - Number(row.proposedCost);
-    if (Number.isFinite(delta)) deltaByPlc.set(plc, (deltaByPlc.get(plc) || 0) + delta);
-  }
-  const plcs = [...new Set([...currentCounts.keys(), ...proposedCounts.keys(), ...deltaByPlc.keys()])].filter(Boolean).sort();
-  const currentTotal = [...currentCounts.values()].reduce((a, v) => a + v, 0);
-  const proposedTotal = [...proposedCounts.values()].reduce((a, v) => a + v, 0);
-  if (!plcs.length) return '<tr><td colspan="6">Unavailable</td></tr>';
+
+  const plcs = [...new Set([...currentBuckets.keys(), ...proposedBuckets.keys()])].filter(Boolean).sort();
+  const currentTotal = [...currentBuckets.values()].reduce((a, v) => a + v.centers, 0);
+  const proposedTotal = [...proposedBuckets.values()].reduce((a, v) => a + v.centers, 0);
+  if (!plcs.length) return '<tr><td colspan="11">Unavailable</td></tr>';
   return plcs.map((plc) => {
-    const current = currentCounts.get(plc);
-    const proposed = proposedCounts.get(plc);
-    const delta = deltaByPlc.has(plc) ? deltaByPlc.get(plc) : null;
+    const current = currentBuckets.get(plc);
+    const proposed = proposedBuckets.get(plc);
     return `<tr>
       ${td(plc)}
-      ${td(Number.isFinite(current) ? num(current) : 'Unavailable')}
-      ${td(Number.isFinite(current) ? pctOrUnavailable(current, currentTotal) : 'Unavailable')}
-      ${td(Number.isFinite(proposed) ? num(proposed) : 'Unavailable')}
-      ${td(Number.isFinite(proposed) ? pctOrUnavailable(proposed, proposedTotal) : 'Unavailable')}
-      ${td(delta === null ? 'Unavailable' : money(delta), 'money')}
+      ${td(current ? num(current.centers) : 'Unavailable')}
+      ${td(current ? pctOrUnavailable(current.centers, currentTotal) : 'Unavailable')}
+      ${td(proposed ? num(proposed.centers) : 'Unavailable')}
+      ${td(proposed ? pctOrUnavailable(proposed.centers, proposedTotal) : 'Unavailable')}
+      ${td(current?.hasLiters ? num(current.liters) : 'Unavailable')}
+      ${td(current ? num(current.cases) : 'Unavailable')}
+      ${td(current ? num(palletsFromCases(current.cases)) : 'Unavailable')}
+      ${td(proposed?.hasLiters ? num(proposed.liters) : 'Unavailable')}
+      ${td(proposed ? num(proposed.cases) : 'Unavailable')}
+      ${td(proposed ? num(palletsFromCases(proposed.cases)) : 'Unavailable')}
     </tr>`;
   }).join('');
 }
@@ -553,8 +574,8 @@ export async function GET(req) {
   <section class="keep-together">
     <h2>Distribution centers · visible scenario route universe</h2>
     <p class="small">Executive baseline uses 296 Active RFQ centers. Operational breakdowns below use the visible Optimization Engine route universe currently loaded in the scenario.</p>
-    <p class="small">PLC cost split is a directional route-level allocation and may not reconcile to the portfolio weekly opportunity. Portfolio opportunity is calculated in Current vs Proposed Totals.</p>
-    <table><thead><tr><th>PLC</th><th>Current centers</th><th>Current %</th><th>Proposed centers</th><th>Proposed %</th><th>Directional route-level Δ $/wk</th></tr></thead><tbody>${distributionSplitRows(baseline.nodes, assignmentDetails, s.routeComparison)}</tbody></table>
+    <p class="small">Volume split is grouped by current PLC and proposed PLC using the visible Optimization Engine route universe. Weekly pallets use cases / 70.</p>
+    <table><thead><tr><th>PLC</th><th>Current centers</th><th>Current %</th><th>Proposed centers</th><th>Proposed %</th><th>Current weekly liters</th><th>Current weekly cases</th><th>Current weekly pallets</th><th>Proposed weekly liters</th><th>Proposed weekly cases</th><th>Proposed weekly pallets</th></tr></thead><tbody>${distributionSplitRows(baseline.nodes, assignmentDetails)}</tbody></table>
   </section>
 
   <section class="keep-together">
