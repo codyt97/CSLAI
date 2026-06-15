@@ -58,6 +58,10 @@ function opportunity(current, proposed) {
   return (Number(current) || 0) - (Number(proposed) || 0);
 }
 
+function isProposedOnlyCost(currentCost, proposedCost) {
+  return (Number(currentCost) || 0) <= 0 && (Number(proposedCost) || 0) > 0;
+}
+
 function td(value, className = '') {
   return `<td${className ? ` class="${className}"` : ''}>${esc(value)}</td>`;
 }
@@ -90,6 +94,7 @@ function routeRows(routeComparison, routeLookup) {
     const pallets = palletsFromCases(cases);
     const utilization = pallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets * 100;
     const proposedOnly = (Number(row.currentCost) || 0) <= 0 || (Number(row.currentMiles) || 0) <= 0;
+    const proposedOnlyCost = isProposedOnlyCost(row.currentCost, row.proposedCost);
     const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC review needed'}${proposedOnly ? ' — Proposed-only grouping' : ''}`;
     return `<tr>
       ${td(row.route)}
@@ -99,8 +104,8 @@ function routeRows(routeComparison, routeLookup) {
       ${td(num(row.proposedMiles))}
       ${td(money(row.currentCost), 'money')}
       ${td(money(row.proposedCost), 'money')}
-      ${td(money(weeklyOpportunity), 'money')}
-      ${td(money(weeklyOpportunity * 52), 'money')}
+      ${td(proposedOnlyCost ? 'Paired impact' : money(weeklyOpportunity), proposedOnlyCost ? '' : 'money')}
+      ${td(proposedOnlyCost ? 'Reflected in portfolio total' : money(weeklyOpportunity * 52), proposedOnlyCost ? '' : 'money')}
       ${td(num(cases))}
       ${td(num(pallets))}
       ${td(`${num(utilization)}%`)}
@@ -320,6 +325,10 @@ function allFrequencyChangeRows(rows = []) {
   }).join('');
 }
 
+function frequencyChangeCount(rows = []) {
+  return (rows || []).filter((row) => row && row.currentPickupFrequency !== row.proposedPickupFrequency).length;
+}
+
 function rerouteGroupBlocks(routeStopSequences = [], routeComparison = [], nodes = []) {
   if (!routeStopSequences.length) return '<p class="small">No reroute group details available for this scenario.</p>';
   const nodeLookup = baselineNodeLookup(nodes);
@@ -339,6 +348,7 @@ function rerouteGroupBlocks(routeStopSequences = [], routeComparison = [], nodes
     const currentWeeklyCost = Number(comparison.currentCost);
     const proposedWeeklyCost = Number(comparison.proposedCost);
     const weeklyOpportunity = Number.isFinite(currentWeeklyCost) && Number.isFinite(proposedWeeklyCost) ? currentWeeklyCost - proposedWeeklyCost : null;
+    const proposedOnlyCost = isProposedOnlyCost(currentWeeklyCost, proposedWeeklyCost);
     const details = enriched.map(({ stop, node, weeklyCases: stopCases }) => `<tr>
       ${td(`${stop.centerNumber || node?.centerNumber || ''} ${stop.centerName || node?.centerName || ''}`.trim() || 'Unavailable')}
       ${td(`${unavailable(stop.city || node?.city)}, ${unavailable(stop.state || node?.state)}`)}
@@ -361,8 +371,8 @@ function rerouteGroupBlocks(routeStopSequences = [], routeComparison = [], nodes
         <tr><th>Center count</th>${td(num(stops.length))}<th>Weekly cases</th>${td(num(weeklyCases))}</tr>
         <tr><th>Weekly pallets = cases / 70</th>${td(num(weeklyPallets))}<th>Workbook Allocated Source Miles</th>${td(numOrMessage(Number(comparison.currentMiles), 'Unavailable'))}</tr>
         <tr><th>Scenario Routed Miles</th>${td(numOrMessage(Number(comparison.proposedMiles), 'Unavailable'))}<th>Current weekly cost</th>${td(moneyOrMessage(currentWeeklyCost, 'Unavailable'), 'money')}</tr>
-        <tr><th>Proposed weekly cost</th>${td(moneyOrMessage(proposedWeeklyCost, 'Unavailable'), 'money')}<th>Weekly opportunity</th>${td(weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity), 'money')}</tr>
-        <tr><th>Annual opportunity = weekly opportunity × 48</th>${td(weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks), 'money')}<th>48-ft capacity = 24 pallets</th>${td('Applied')}</tr>
+        <tr><th>Proposed weekly cost</th>${td(moneyOrMessage(proposedWeeklyCost, 'Unavailable'), 'money')}<th>Weekly opportunity</th>${td(proposedOnlyCost ? 'Paired impact' : weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity), proposedOnlyCost || weeklyOpportunity === null ? '' : 'money')}</tr>
+        <tr><th>Annual opportunity = weekly opportunity × 48</th>${td(proposedOnlyCost ? 'Reflected in portfolio total' : weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks), proposedOnlyCost || weeklyOpportunity === null ? '' : 'money')}<th>48-ft capacity = 24 pallets</th>${td('Applied')}</tr>
       </tbody></table>
       <table><thead><tr><th>Center</th><th>City, State</th><th>Current route</th><th>Proposed route</th><th>Current PLC</th><th>Proposed PLC</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>One-way miles</th><th>Estimated stop-level cost allocation</th></tr></thead><tbody>${details || '<tr><td colspan="12">Unavailable</td></tr>'}</tbody></table>
     </div>`;
@@ -541,18 +551,21 @@ export async function GET(req) {
   </section>
 
   <section class="keep-together">
-    <h2>Distribution centers · Volume & cost split</h2>
-    <table><thead><tr><th>PLC</th><th>Current centers</th><th>Current %</th><th>Proposed centers</th><th>Proposed %</th><th>Δ $/wk</th></tr></thead><tbody>${distributionSplitRows(baseline.nodes, assignmentDetails, s.routeComparison)}</tbody></table>
+    <h2>Distribution centers · visible scenario route universe</h2>
+    <p class="small">Executive baseline uses 296 Active RFQ centers. Operational breakdowns below use the visible Optimization Engine route universe currently loaded in the scenario.</p>
+    <p class="small">PLC cost split is a directional route-level allocation and may not reconcile to the portfolio weekly opportunity. Portfolio opportunity is calculated in Current vs Proposed Totals.</p>
+    <table><thead><tr><th>PLC</th><th>Current centers</th><th>Current %</th><th>Proposed centers</th><th>Proposed %</th><th>Directional route-level Δ $/wk</th></tr></thead><tbody>${distributionSplitRows(baseline.nodes, assignmentDetails, s.routeComparison)}</tbody></table>
   </section>
 
   <section class="keep-together">
-    <h2>Pickup frequency · centers</h2>
+    <h2>Pickup frequency · visible scenario route universe</h2>
+    <p class="small">Executive baseline uses 296 Active RFQ centers. Operational breakdowns below use the visible Optimization Engine route universe currently loaded in the scenario.</p>
     <table><thead><tr><th>Frequency</th><th>Current</th><th>Proposed</th><th>Δ</th></tr></thead><tbody>${pickupFrequencyRows(baseline.nodes, assignmentDetails)}</tbody></table>
   </section>
 
   <section>
     <h2>Route-by-Route Comparison</h2>
-    <p class="small">Rows marked Proposed-only / paired route impact are new proposed route groupings. Their negative row opportunity should not be read as standalone savings or cost increase. Portfolio opportunity comes from the Current vs Proposed visible totals.</p>
+    <p class="small">Rows marked Proposed-only grouping are new proposed route groupings. Their impact is paired with current route changes and should be read through the portfolio totals, not as standalone route savings or cost increases.</p>
     <table><thead><tr>
       <th>Route name</th><th>Current PLC</th><th>Proposed route / PLC</th><th>Workbook Allocated Source Miles</th><th>Scenario Routed Miles</th><th>Current weekly cost</th><th>Proposed weekly cost</th><th>Weekly opportunity</th><th>Annual opportunity</th><th>Weekly cases</th><th>Weekly pallets</th><th>Pallet utilization using 24-pallet 48-ft capacity</th>
     </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="12">No route comparison rows available.</td></tr>'}</tbody></table>
@@ -574,7 +587,8 @@ export async function GET(req) {
   </section>
 
   <section>
-    <h2>Frequency changes · all centers</h2>
+    <h2>Frequency changes · detected centers</h2>
+    <p class="small">Detected frequency changes: ${num(frequencyChangeCount(brief.frequencyChanges || s.centersChangedFrequency))} centers. Only frequency changes explicitly detected in the scenario data are listed.</p>
     <table><thead><tr>
       <th>Center</th><th>City</th><th>Cases/wk</th><th>From → To</th><th>Δ $/wk</th>
     </tr></thead><tbody>${allFrequencyChangeRows(brief.frequencyChanges || s.centersChangedFrequency)}</tbody></table>
@@ -586,7 +600,8 @@ export async function GET(req) {
   </section>
 
   <section class="page-break">
-    <h2>Route Stop Sequences</h2>
+    <h2>Route Stop Sequences Appendix</h2>
+    <p class="small">This appendix repeats stop-level detail in route sequence order for operational review.</p>
     <p class="small">Stop-level cost allocation is directional and may not sum exactly to route-level proposed weekly cost. Use route-level proposed weekly cost for portfolio comparison.</p>
     <table><thead><tr>
       <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>PLC → stop one-way miles</th><th>Estimated stop-level cost allocation</th>
