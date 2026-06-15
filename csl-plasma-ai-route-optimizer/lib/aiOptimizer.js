@@ -139,7 +139,11 @@ const SCENARIO_TYPES = {
 
 export const ACTIVE_RFQ_BASELINE = {
   weeklyCost: 364011.36,
-  annualCost: 364011.36 * 52,
+  monthlyCost: 1456045.44,
+  annualCost: 17472545.31,
+  annualizationWeeks: 48,
+  monthlyMultiplier: 4,
+  annualMonths: 12,
   centers: 296,
   weeklyCases: 35439.52,
   weeklyLiters: 408533.22,
@@ -724,7 +728,11 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
     weeklyCost: ACTIVE_RFQ_BASELINE.weeklyCost,
     annualCost: roundScenario(ACTIVE_RFQ_BASELINE.annualCost)
   };
-  const proposedTotals = calculateNetworkTotals(proposedRoutes);
+  const routeGroupProposedTotals = calculateNetworkTotals(proposedRoutes);
+  const proposedTotals = {
+    ...routeGroupProposedTotals,
+    annualCost: roundScenario(routeGroupProposedTotals.weeklyCost * ACTIVE_RFQ_BASELINE.annualizationWeeks)
+  };
   const deltaTotals = {
     weeklyCases: roundScenario(proposedTotals.weeklyCases - currentTotals.weeklyCases),
     weeklyMiles: roundScenario(proposedTotals.weeklyMiles - currentTotals.weeklyMiles),
@@ -773,7 +781,7 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
     annualCostCurrent: currentTotals.annualCost,
     annualCostProposed: proposedTotals.annualCost,
     weeklyScenarioSavings: scenarioSavings,
-    annualScenarioSavings: roundScenario(scenarioSavings * 52),
+    annualScenarioSavings: roundScenario(scenarioSavings * ACTIVE_RFQ_BASELINE.annualizationWeeks),
     plcSplitCurrent: countScenario(currentRoutes, (r) => r.currentEndpointPLC),
     plcSplitProposed: countScenario(proposedRoutes, (r) => r.proposedPLC),
     pickupFrequencyCurrent: countScenario(buildOptimizationNodes(), (n) => n.currentPickupFrequency),

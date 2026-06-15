@@ -620,7 +620,10 @@ const ACTIVE_RFQ_BASELINE = {
   openActiveCenters: 296,
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
-  annualCost: 364011.36 * 52,
+  annualCost: 17472545.31,
+  annualizationWeeks: 48,
+  monthlyMultiplier: 4,
+  annualMonths: 12,
   weeklyCases: 35439.52,
   weeklyLiters: 408533.22,
   weeklyMiles: 40429.02,
@@ -815,7 +818,7 @@ function sumActiveRfq(rows){
   }
   const cases=activeRows.reduce((a,r)=>a+getRfqWeeklyCases(r),0);
   const cost=activeRows.reduce((a,r)=>a+getRfqWeeklyCost(r),0);
-  return {category:'Active RFQ Baseline filtered view', rows:activeRows, centers:activeRows.length, open:activeRows.length, cases, liters:activeRows.reduce((a,r)=>a+(Number(r.weeklyLiters)||0),0), pallets:baselinePalletsFromCases(cases), miles:activeRows.reduce((a,r)=>a+getRfqWeeklyMiles(r),0), cost, monthlyCost:cost*4, annualCost:cost*52};
+  return {category:'Active RFQ Baseline filtered view', rows:activeRows, centers:activeRows.length, open:activeRows.length, cases, liters:activeRows.reduce((a,r)=>a+(Number(r.weeklyLiters)||0),0), pallets:baselinePalletsFromCases(cases), miles:activeRows.reduce((a,r)=>a+getRfqWeeklyMiles(r),0), cost, monthlyCost:cost*ACTIVE_RFQ_BASELINE.monthlyMultiplier, annualCost:cost*ACTIVE_RFQ_BASELINE.annualizationWeeks};
 }
 function isActiveRelayRoute(r){
   const route = normText(getRouteName(r));
@@ -3741,7 +3744,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       hasScenarioOnlyMileage: routeKpis.some(r=>!r.isMileageComparable),
       totalProposedWeeklyCost,
       totalWeeklyOpportunity,
-      totalAnnualOpportunity: totalWeeklyOpportunity !== null ? totalWeeklyOpportunity * 52 : null
+      totalAnnualOpportunity: totalWeeklyOpportunity !== null ? totalWeeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks : null
     };
   }
   function setKpiLabel(id, label){ const el=$(id); const labelEl=el?.parentElement?.querySelector('.label'); if(labelEl) labelEl.textContent=label; }
@@ -3849,8 +3852,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:k.totalAnnualOpportunity,
         currentWeeklyCost:k.totalCurrentWeeklyCost,
         proposedWeeklyCost:k.totalProposedWeeklyCost,
-        currentAnnualCost:Number(k.totalCurrentWeeklyCost || 0) * 52,
-        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * 52,
+        currentAnnualCost:ACTIVE_RFQ_BASELINE.annualCost,
+        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * ACTIVE_RFQ_BASELINE.annualizationWeeks,
         currentWeeklyMiles:k.totalCurrentWorkbookMiles,
         proposedWeeklyMiles:k.totalProposedEstimatedRoadMiles,
         weeklyCases:k.totalWeeklyCases,
@@ -3901,8 +3904,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:k.totalAnnualOpportunity,
         currentWeeklyCost:k.totalCurrentWeeklyCost,
         proposedWeeklyCost:k.totalProposedWeeklyCost,
-        currentAnnualCost:Number(k.totalCurrentWeeklyCost || 0) * 52,
-        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * 52,
+        currentAnnualCost:ACTIVE_RFQ_BASELINE.annualCost,
+        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * ACTIVE_RFQ_BASELINE.annualizationWeeks,
         currentWeeklyMiles:k.totalCurrentWorkbookMiles,
         proposedWeeklyMiles:k.totalProposedEstimatedRoadMiles,
         weeklyCases:k.totalWeeklyCases,
