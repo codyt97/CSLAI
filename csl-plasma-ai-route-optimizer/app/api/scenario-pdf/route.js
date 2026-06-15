@@ -74,7 +74,7 @@ function routeRows(routeComparison, routeLookup) {
     const pallets = palletsFromCases(cases);
     const utilization = pallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets * 100;
     const proposedOnly = (Number(row.currentCost) || 0) <= 0 || (Number(row.currentMiles) || 0) <= 0;
-    const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC review needed'}${proposedOnly ? ' — Proposed-only / paired route impact — not standalone portfolio savings' : ''}`;
+    const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC review needed'}${proposedOnly ? ' — Proposed-only grouping' : ''}`;
     return `<tr>
       ${td(row.route)}
       ${td(currentPlcForRoute(row, routeLookup))}
@@ -237,6 +237,8 @@ function calculationMethodRows(report) {
   const baselineWeekly = Number(ACTIVE_RFQ_BASELINE.weeklyCost);
   const currentWeekly = Number(report.currentWeeklyCost);
   const proposedWeekly = Number(report.proposedWeeklyCost);
+  const proposedMiles = Number(report.proposedWeeklyMiles);
+  const impliedRate = Number.isFinite(proposedWeekly) && Number.isFinite(proposedMiles) && proposedMiles > 0 ? proposedWeekly / proposedMiles : NaN;
   const weeklyOpportunity = Number(report.weeklyOpportunity);
   const weeklyCases = Number(report.weeklyCases);
   const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
@@ -247,6 +249,8 @@ function calculationMethodRows(report) {
     ['Current Visible Weekly Cost = Sum of visible Optimization Engine current weekly costs', calculationValue(currentWeekly)],
     ['Proposed Visible Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
     ['Proposed Weekly Cost basis', "Proposed visible weekly cost is the sum of proposed weekly costs from the Optimization Engine visible scenario table. Directional proposed route cost is based on scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
+    ['Implied Scenario $/Mile = Proposed Visible Weekly Cost ÷ Scenario Routed Miles', Number.isFinite(impliedRate) ? `${money(proposedWeekly)} ÷ ${num(proposedMiles)} = ${money(impliedRate)} per mile` : 'Unavailable'],
+    ['Proposed Visible Weekly Cost = Scenario Routed Miles × Implied Scenario $/Mile', Number.isFinite(impliedRate) ? `${num(proposedMiles)} × ${money(impliedRate)} = ${money(proposedWeekly)}` : 'Unavailable'],
     ['Weekly Opportunity = Current Visible Weekly Cost - Proposed Visible Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
     ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × 52 = ${money(weeklyOpportunity * 52)}` : 'Unavailable'],
     ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
@@ -354,8 +358,8 @@ export async function GET(req) {
     .print-button{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:6px;padding:9px 12px;font-weight:700;margin-bottom:18px}
     header{border-bottom:3px solid var(--brand);padding-bottom:14px;margin-bottom:18px}h1{font-size:28px;margin:0 0 6px}h2{font-size:17px;margin:24px 0 8px;color:#0f172a}.status{display:inline-block;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:999px;padding:5px 9px;font-weight:700;font-size:12px}
     .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.metric{border:1px solid var(--line);background:var(--soft);padding:10px;border-radius:6px}.metric span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.metric b{display:block;font-size:18px;margin-top:3px}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#1e3a8a}.money{text-align:right;white-space:nowrap}.notes li{margin-bottom:5px}.small{font-size:11px;color:var(--muted)}.page-break{break-before:page}
-    @media print{body{margin:16mm}.print-button{display:none}.page-break{break-before:page}a{color:inherit;text-decoration:none}}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#1e3a8a}.money{text-align:right;white-space:nowrap}.notes li{margin-bottom:5px}.small{font-size:11px;color:var(--muted)}.page-break{break-before:page}.keep-together{break-inside:avoid;page-break-inside:avoid}
+    @media print{body{margin:16mm}.print-button{display:none}.page-break{break-before:page}.keep-together{break-inside:avoid;page-break-inside:avoid}a{color:inherit;text-decoration:none}}
   </style></head><body>
   <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
 
@@ -391,12 +395,12 @@ export async function GET(req) {
     </tbody></table>
   </section>
 
-  <section>
+  <section class="keep-together">
     <h2>Calculation Method</h2>
     <table><thead><tr><th>Formula</th><th>Report values used</th></tr></thead><tbody>${calculationMethodRows(report)}</tbody></table>
   </section>
 
-  <section class="page-break">
+  <section>
     <h2>Route-by-Route Comparison</h2>
     <p class="small">Rows marked Proposed-only / paired route impact are new proposed route groupings. Their negative row opportunity should not be read as standalone savings or cost increase. Portfolio opportunity comes from the Current vs Proposed visible totals.</p>
     <table><thead><tr>
