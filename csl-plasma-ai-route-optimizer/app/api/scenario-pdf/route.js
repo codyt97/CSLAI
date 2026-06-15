@@ -4,7 +4,7 @@ const ACTIVE_RFQ_BASELINE = {
   activeCenters: 296,
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
-  annualCost: 17472545.31,
+  annualCost: 18928590.72,
   weeklyCases: 35439.52,
   weeklyLiters: 408533.22,
   weeklyMiles: 40429.02,
@@ -64,7 +64,7 @@ function unavailable(value) {
 function currentPlcForRoute(row, routeLookup) {
   if (routeLookup.has(row.route)) return routeLookup.get(row.route).currentEndpointPLC;
   const source = [...routeLookup.values()].find((route) => String(row.route || '').startsWith(route.routeName));
-  return source?.currentEndpointPLC || 'Current baseline PLC requires validation';
+  return source?.currentEndpointPLC || 'Current baseline PLC review needed';
 }
 
 function routeRows(routeComparison, routeLookup) {
@@ -74,7 +74,7 @@ function routeRows(routeComparison, routeLookup) {
     const pallets = palletsFromCases(cases);
     const utilization = pallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets * 100;
     const proposedOnly = (Number(row.currentCost) || 0) <= 0 || (Number(row.currentMiles) || 0) <= 0;
-    const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC requires validation'}${proposedOnly ? ' — Proposed-only / paired route impact — not standalone portfolio savings' : ''}`;
+    const proposedRouteLabel = `${row.route} / ${row.plc || 'Scenario PLC review needed'}${proposedOnly ? ' — Proposed-only / paired route impact — not standalone portfolio savings' : ''}`;
     return `<tr>
       ${td(row.route)}
       ${td(currentPlcForRoute(row, routeLookup))}
@@ -115,7 +115,7 @@ function assignmentStatus({ node, proposedPLC, proposedRoute, proposedFrequency 
   if (!node) statuses.push('New proposed route / paired route impact');
   if (node && proposedPLC && proposedPLC !== node.currentPLC) statuses.push('PLC reassigned');
   if (node && proposedRoute && proposedRoute !== node.currentRoute) statuses.push('Route reassigned');
-  if (node && proposedFrequency && proposedFrequency !== node.currentPickupFrequency) statuses.push('Requires validation');
+  if (node && proposedFrequency && proposedFrequency !== node.currentPickupFrequency) statuses.push('Review needed');
   return statuses.length ? statuses.join('; ') : 'Unchanged';
 }
 
@@ -135,9 +135,9 @@ function buildAssignmentDetails(routeStopSequences = [], nodes = [], frequencyCh
         city: stop.city || node?.city || 'Unavailable',
         state: stop.state || node?.state || 'Unavailable',
         currentPLC: node?.currentPLC || freqChange?.currentPLC || 'Unavailable',
-        proposedPLC: route.proposedPLC || freqChange?.proposedPLC || 'Requires validation',
+        proposedPLC: route.proposedPLC || freqChange?.proposedPLC || 'Review needed',
         currentRoute: node?.currentRoute || freqChange?.currentRoute || 'Unavailable',
-        proposedRoute: route.routeName || freqChange?.proposedRoute || 'Requires validation',
+        proposedRoute: route.routeName || freqChange?.proposedRoute || 'Review needed',
         pickupFrequency: proposedFrequency || 'Unavailable',
         weeklyCases,
         weeklyPallets: palletsFromCases(weeklyCases),
@@ -196,7 +196,7 @@ function frequencyChangeRows(rows = []) {
       ${td(unavailable(row.proposedPickupFrequency))}
       ${td(num(weeklyCases))}
       ${td(num(palletsFromCases(weeklyCases)))}
-      ${td(row.reason || 'Requires pickup frequency, cold-chain, storage, and McKesson validation')}
+      ${td('Frequency change requires operational review')}
     </tr>`;
   }).join('');
 }
@@ -214,7 +214,7 @@ function routeStopSequenceRows(routeStopSequences = []) {
       const weeklyCases = Number(stop.casesWeek || 0);
       rows.push(`<tr>
         ${td(route.routeName || 'Unavailable')}
-        ${td(route.proposedPLC || 'Requires validation')}
+        ${td(route.proposedPLC || 'Review needed')}
         ${td(hasStopOrder ? stop.stopNumber : 'Stop order unavailable — sorted for review only')}
         ${td(`${stop.centerNumber || ''} ${stop.centerName || ''}`.trim() || 'Unavailable')}
         ${td(`${unavailable(stop.city)}, ${unavailable(stop.state)}`)}
@@ -234,21 +234,24 @@ function calculationValue(value, formatter = money) {
 }
 
 function calculationMethodRows(report) {
+  const baselineWeekly = Number(ACTIVE_RFQ_BASELINE.weeklyCost);
   const currentWeekly = Number(report.currentWeeklyCost);
   const proposedWeekly = Number(report.proposedWeeklyCost);
   const weeklyOpportunity = Number(report.weeklyOpportunity);
   const weeklyCases = Number(report.weeklyCases);
   const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
   const rows = [
-    ['Current Weekly Cost = Sum of visible Optimization Engine current weekly costs', calculationValue(currentWeekly)],
-    ['Proposed Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
-    ['Proposed Weekly Cost basis', "Proposed weekly cost is the Optimization Engine scenario total passed from the visible table. It is built from each route's scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
-    ['Weekly Opportunity = Current Weekly Cost - Proposed Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
+    ['Active RFQ Annual Baseline Cost = Active RFQ Weekly Baseline Cost × 52', `${money(baselineWeekly)} × 52 = ${money(baselineWeekly * 52)}`],
+    ['Current Visible Annual Cost = Current Visible Weekly Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
+    ['Proposed Visible Annual Cost = Proposed Visible Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
+    ['Current Visible Weekly Cost = Sum of visible Optimization Engine current weekly costs', calculationValue(currentWeekly)],
+    ['Proposed Visible Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
+    ['Proposed Weekly Cost basis', "Proposed visible weekly cost is the sum of proposed weekly costs from the Optimization Engine visible scenario table. Directional proposed route cost is based on scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
+    ['Weekly Opportunity = Current Visible Weekly Cost - Proposed Visible Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
     ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × 52 = ${money(weeklyOpportunity * 52)}` : 'Unavailable'],
-    ['Current Annual Cost = Current Weekly Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
-    ['Proposed Annual Cost = Proposed Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
     ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
-    ['Pallet Utilization = Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable']
+    ['Estimated 48-ft Trailer Equivalents = Total Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable'],
+    ['Route Pallet Utilization = Route Weekly Pallets ÷ 24', 'Shown per route as route weekly pallets ÷ 24-pallet 48-ft capacity.']
   ];
   return rows.map(([label, value]) => `<tr>${td(label)}${td(value)}</tr>`).join('');
 }
@@ -380,7 +383,7 @@ export async function GET(req) {
     <table><thead><tr><th>Metric</th><th>Current Visible Scenario Total</th><th>Proposed Visible Scenario Total</th><th>Opportunity / Delta</th></tr></thead><tbody>
       <tr><td>Weekly cost</td><td class="money">${moneyOrMessage(report.currentWeeklyCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${moneyOrMessage(report.proposedWeeklyCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${esc(report.weeklyOpportunityDisplay)}</td></tr>
       <tr><td>Annual cost</td><td class="money">${moneyOrMessage(report.currentAnnualCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${moneyOrMessage(report.proposedAnnualCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${esc(report.opportunityDisplay)}</td></tr>
-      <tr><td>Weekly miles</td><td>${numOrMessage(report.currentWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${numOrMessage(report.proposedWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>Directional estimate — mileage basis differs and requires validation</td></tr>
+      <tr><td>Weekly miles</td><td>${numOrMessage(report.currentWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${numOrMessage(report.proposedWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>Directional estimate — mileage basis differs and needs review</td></tr>
       <tr><td>Weekly cases</td><td>${numOrMessage(report.weeklyCases, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${numOrMessage(report.proposedWeeklyCases, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${isOptimizationReport ? 'Matches Optimization Engine visible route universe when available' : num(Number(s.deltaTotals?.weeklyCases) || 0)}</td></tr>
       <tr><td>Weekly pallets</td><td>${numOrMessage(report.weeklyPallets, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${numOrMessage(report.proposedWeeklyPallets, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>Pallets use cases / 70</td></tr>
       <tr><td>Weekly opportunity</td><td></td><td></td><td class="money">${esc(report.weeklyOpportunityDisplay)}</td></tr>
@@ -395,6 +398,7 @@ export async function GET(req) {
 
   <section class="page-break">
     <h2>Route-by-Route Comparison</h2>
+    <p class="small">Rows marked Proposed-only / paired route impact are new proposed route groupings. Their negative row opportunity should not be read as standalone savings or cost increase. Portfolio opportunity comes from the Current vs Proposed visible totals.</p>
     <table><thead><tr>
       <th>Route name</th><th>Current PLC</th><th>Proposed route / PLC</th><th>Workbook Allocated Source Miles</th><th>Scenario Routed Miles</th><th>Current weekly cost</th><th>Proposed weekly cost</th><th>Weekly opportunity</th><th>Annual opportunity</th><th>Weekly cases</th><th>Weekly pallets</th><th>Pallet utilization using 24-pallet 48-ft capacity</th>
     </tr></thead><tbody>${routeRows(s.routeComparison, routeLookup) || '<tr><td colspan="12">No route comparison rows available.</td></tr>'}</tbody></table>
@@ -402,7 +406,7 @@ export async function GET(req) {
 
   <section class="page-break">
     <h2>Center-to-PLC / Route Assignment Detail</h2>
-    <p class="small">Which plasma center goes where. Weekly pallets are calculated as weekly cases / 70. Missing proposed fields are shown as Unavailable or Requires validation.</p>
+    <p class="small">Which plasma center goes where. Weekly pallets are calculated as weekly cases / 70. Missing proposed fields are shown as Unavailable or Review needed.</p>
     <table><thead><tr>
       <th>Center name</th><th>Center ID</th><th>City</th><th>State</th><th>Current PLC</th><th>Proposed PLC</th><th>Current route / McKesson route</th><th>Proposed route</th><th>Pickup frequency</th><th>Weekly cases</th><th>Weekly pallets = weekly cases / 70</th><th>Assignment status</th>
     </tr></thead><tbody>${assignmentDetailRows(assignmentDetails)}</tbody></table>
@@ -418,14 +422,15 @@ export async function GET(req) {
   <section>
     <h2>Frequency Changes</h2>
     <table><thead><tr>
-      <th>Center</th><th>City, State</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Validation note</th>
+      <th>Center</th><th>City, State</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Operational review note</th>
     </tr></thead><tbody>${frequencyChangeRows(brief.frequencyChanges || s.centersChangedFrequency)}</tbody></table>
   </section>
 
   <section class="page-break">
     <h2>Route Stop Sequences</h2>
+    <p class="small">Stop-level cost allocation is directional and may not sum exactly to route-level proposed weekly cost. Use route-level proposed weekly cost for portfolio comparison.</p>
     <table><thead><tr>
-      <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Workbook/source one-way miles</th><th>Estimated weekly cost</th>
+      <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Workbook/source one-way miles</th><th>Estimated stop-level cost allocation</th>
     </tr></thead><tbody>${routeStopSequenceRows(brief.routeStopSequences || s.proposedStopSequences)}</tbody></table>
   </section>
   </body></html>`;
