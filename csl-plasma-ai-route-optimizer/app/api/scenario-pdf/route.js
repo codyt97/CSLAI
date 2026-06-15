@@ -33,6 +33,12 @@ function numOrMessage(value, message = 'Unavailable') {
   return Number.isFinite(value) ? num(value) : message;
 }
 
+function pctOrUnavailable(value, total) {
+  const v = Number(value);
+  const t = Number(total);
+  return Number.isFinite(v) && Number.isFinite(t) && t > 0 ? `${num(v / t * 100)}%` : 'Unavailable';
+}
+
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
@@ -62,6 +68,13 @@ function centerKey(value) {
 
 function unavailable(value) {
   return value === null || value === undefined || value === '' ? 'Unavailable' : value;
+}
+
+function normalizeFrequency(value) {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (raw === 'W' || raw === 'WEEKLY') return 'Weekly (W)';
+  if (raw === 'BW' || raw === 'BI-WEEKLY' || raw === 'BIWEEKLY' || raw === 'BI WEEKLY') return 'Bi-Weekly (BW)';
+  return raw ? unavailable(value) : 'Unavailable';
 }
 
 function currentPlcForRoute(row, routeLookup) {
@@ -232,6 +245,130 @@ function routeStopSequenceRows(routeStopSequences = []) {
   return rows.join('') || '<tr><td colspan="10">Route stop sequence details unavailable for this scenario output.</td></tr>';
 }
 
+function distributionSplitRows(nodes = [], assignmentDetails = [], routeComparison = []) {
+  const currentCounts = new Map();
+  const proposedCounts = new Map();
+  const deltaByPlc = new Map();
+  for (const node of nodes || []) {
+    const plc = unavailable(node.currentPLC);
+    currentCounts.set(plc, (currentCounts.get(plc) || 0) + 1);
+  }
+  for (const row of assignmentDetails || []) {
+    const plc = unavailable(row.proposedPLC);
+    proposedCounts.set(plc, (proposedCounts.get(plc) || 0) + 1);
+  }
+  for (const row of routeComparison || []) {
+    const plc = unavailable(row.plc);
+    const delta = Number(row.currentCost) - Number(row.proposedCost);
+    if (Number.isFinite(delta)) deltaByPlc.set(plc, (deltaByPlc.get(plc) || 0) + delta);
+  }
+  const plcs = [...new Set([...currentCounts.keys(), ...proposedCounts.keys(), ...deltaByPlc.keys()])].filter(Boolean).sort();
+  const currentTotal = [...currentCounts.values()].reduce((a, v) => a + v, 0);
+  const proposedTotal = [...proposedCounts.values()].reduce((a, v) => a + v, 0);
+  if (!plcs.length) return '<tr><td colspan="6">Unavailable</td></tr>';
+  return plcs.map((plc) => {
+    const current = currentCounts.get(plc);
+    const proposed = proposedCounts.get(plc);
+    const delta = deltaByPlc.has(plc) ? deltaByPlc.get(plc) : null;
+    return `<tr>
+      ${td(plc)}
+      ${td(Number.isFinite(current) ? num(current) : 'Unavailable')}
+      ${td(Number.isFinite(current) ? pctOrUnavailable(current, currentTotal) : 'Unavailable')}
+      ${td(Number.isFinite(proposed) ? num(proposed) : 'Unavailable')}
+      ${td(Number.isFinite(proposed) ? pctOrUnavailable(proposed, proposedTotal) : 'Unavailable')}
+      ${td(delta === null ? 'Unavailable' : money(delta), 'money')}
+    </tr>`;
+  }).join('');
+}
+
+function pickupFrequencyRows(nodes = [], assignmentDetails = []) {
+  const labels = ['Weekly (W)', 'Bi-Weekly (BW)'];
+  const currentCounts = new Map(labels.map((label) => [label, 0]));
+  const proposedCounts = new Map(labels.map((label) => [label, 0]));
+  for (const node of nodes || []) {
+    const label = normalizeFrequency(node.currentPickupFrequency);
+    if (currentCounts.has(label)) currentCounts.set(label, currentCounts.get(label) + 1);
+  }
+  for (const row of assignmentDetails || []) {
+    const label = normalizeFrequency(row.pickupFrequency);
+    if (proposedCounts.has(label)) proposedCounts.set(label, proposedCounts.get(label) + 1);
+  }
+  return labels.map((label) => {
+    const current = currentCounts.get(label);
+    const proposed = proposedCounts.get(label);
+    return `<tr>${td(label)}${td(num(current))}${td(num(proposed))}${td(num(proposed - current))}</tr>`;
+  }).join('');
+}
+
+function allFrequencyChangeRows(rows = []) {
+  const changed = (rows || []).filter((row) => row && row.currentPickupFrequency !== row.proposedPickupFrequency);
+  if (!changed.length) return '<tr><td colspan="5">No frequency changes in this scenario.</td></tr>';
+  return changed.map((row) => {
+    const weeklyCases = Number(row.currentWeeklyCases || row.proposedWeeklyCases);
+    const delta = Number.isFinite(Number(row.weeklyScenarioSavings))
+      ? Number(row.weeklyScenarioSavings)
+      : Number.isFinite(Number(row.currentWeeklyCost)) && Number.isFinite(Number(row.proposedWeeklyCost))
+        ? Number(row.currentWeeklyCost) - Number(row.proposedWeeklyCost)
+        : null;
+    return `<tr>
+      ${td(`${row.centerNumber || ''} ${row.centerName || ''}`.trim() || 'Unavailable')}
+      ${td(unavailable(row.city))}
+      ${td(Number.isFinite(weeklyCases) ? num(weeklyCases) : 'Unavailable')}
+      ${td(`${unavailable(row.currentPickupFrequency)} → ${unavailable(row.proposedPickupFrequency)}`)}
+      ${td(delta === null ? 'Unavailable' : money(delta), 'money')}
+    </tr>`;
+  }).join('');
+}
+
+function rerouteGroupBlocks(routeStopSequences = [], routeComparison = [], nodes = []) {
+  if (!routeStopSequences.length) return '<p class="small">No reroute group details available for this scenario.</p>';
+  const nodeLookup = baselineNodeLookup(nodes);
+  const comparisonByRoute = new Map((routeComparison || []).map((row) => [row.route, row]));
+  return routeStopSequences.map((route) => {
+    const comparison = comparisonByRoute.get(route.routeName) || {};
+    const stops = route.stops || [];
+    const enriched = stops.map((stop) => {
+      const node = nodeLookup.get(centerKey(stop.centerNumber)) || nodeLookup.get(centerKey(stop.centerName));
+      const weeklyCases = Number(stop.casesWeek ?? node?.weeklyCases ?? 0);
+      return { stop, node, weeklyCases };
+    });
+    const currentRoutes = [...new Set(enriched.map((row) => row.node?.currentRoute).filter(Boolean))];
+    const currentPlcs = [...new Set(enriched.map((row) => row.node?.currentPLC).filter(Boolean))];
+    const weeklyCases = Number(comparison.proposedCases ?? enriched.reduce((a, row) => a + (Number(row.weeklyCases) || 0), 0));
+    const weeklyPallets = palletsFromCases(weeklyCases);
+    const currentWeeklyCost = Number(comparison.currentCost);
+    const proposedWeeklyCost = Number(comparison.proposedCost);
+    const weeklyOpportunity = Number.isFinite(currentWeeklyCost) && Number.isFinite(proposedWeeklyCost) ? currentWeeklyCost - proposedWeeklyCost : null;
+    const details = enriched.map(({ stop, node, weeklyCases: stopCases }) => `<tr>
+      ${td(`${stop.centerNumber || node?.centerNumber || ''} ${stop.centerName || node?.centerName || ''}`.trim() || 'Unavailable')}
+      ${td(`${unavailable(stop.city || node?.city)}, ${unavailable(stop.state || node?.state)}`)}
+      ${td(unavailable(node?.currentRoute))}
+      ${td(unavailable(route.routeName))}
+      ${td(unavailable(node?.currentPLC))}
+      ${td(unavailable(route.proposedPLC))}
+      ${td(unavailable(node?.currentPickupFrequency))}
+      ${td(unavailable(stop.frequency || node?.currentPickupFrequency))}
+      ${td(num(stopCases))}
+      ${td(num(palletsFromCases(stopCases)))}
+      ${td(numOrMessage(Number(stop.oneWayMiles), 'Unavailable'))}
+      ${td(moneyOrMessage(Number(stop.costWeek), 'Unavailable'), 'money')}
+    </tr>`).join('');
+    return `<div class="group-block keep-together">
+      <h3>${esc(route.routeName || 'Unavailable')}</h3>
+      <table><tbody>
+        <tr><th>Proposed route group name</th>${td(route.routeName || 'Unavailable')}<th>Proposed PLC</th>${td(route.proposedPLC || 'Unavailable')}</tr>
+        <tr><th>Current route(s) impacted</th>${td(currentRoutes.length ? currentRoutes.join(', ') : 'Unavailable')}<th>Current PLC(s)</th>${td(currentPlcs.length ? currentPlcs.join(', ') : 'Unavailable')}</tr>
+        <tr><th>Center count</th>${td(num(stops.length))}<th>Weekly cases</th>${td(num(weeklyCases))}</tr>
+        <tr><th>Weekly pallets = cases / 70</th>${td(num(weeklyPallets))}<th>Workbook Allocated Source Miles</th>${td(numOrMessage(Number(comparison.currentMiles), 'Unavailable'))}</tr>
+        <tr><th>Scenario Routed Miles</th>${td(numOrMessage(Number(comparison.proposedMiles), 'Unavailable'))}<th>Current weekly cost</th>${td(moneyOrMessage(currentWeeklyCost, 'Unavailable'), 'money')}</tr>
+        <tr><th>Proposed weekly cost</th>${td(moneyOrMessage(proposedWeeklyCost, 'Unavailable'), 'money')}<th>Weekly opportunity</th>${td(weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity), 'money')}</tr>
+        <tr><th>Annual opportunity = weekly opportunity × 48</th>${td(weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks), 'money')}<th>48-ft capacity = 24 pallets</th>${td('Applied')}</tr>
+      </tbody></table>
+      <table><thead><tr><th>Center</th><th>City, State</th><th>Current route</th><th>Proposed route</th><th>Current PLC</th><th>Proposed PLC</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>One-way miles</th><th>Estimated stop-level cost allocation</th></tr></thead><tbody>${details || '<tr><td colspan="12">Unavailable</td></tr>'}</tbody></table>
+    </div>`;
+  }).join('');
+}
+
 function calculationValue(value, formatter = money) {
   return Number.isFinite(value) ? formatter(value) : 'Unavailable';
 }
@@ -361,7 +498,7 @@ export async function GET(req) {
     .print-button{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:6px;padding:9px 12px;font-weight:700;margin-bottom:18px}
     header{border-bottom:3px solid var(--brand);padding-bottom:14px;margin-bottom:18px}h1{font-size:28px;margin:0 0 6px}h2{font-size:17px;margin:24px 0 8px;color:#0f172a}.status{display:inline-block;border:1px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:999px;padding:5px 9px;font-weight:700;font-size:12px}
     .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.metric{border:1px solid var(--line);background:var(--soft);padding:10px;border-radius:6px}.metric span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.metric b{display:block;font-size:18px;margin-top:3px}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#1e3a8a}.money{text-align:right;white-space:nowrap}.notes li{margin-bottom:5px}.small{font-size:11px;color:var(--muted)}.page-break{break-before:page}.keep-together{break-inside:avoid;page-break-inside:avoid}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#1e3a8a}.money{text-align:right;white-space:nowrap}.notes li{margin-bottom:5px}.small{font-size:11px;color:var(--muted)}.page-break{break-before:page}.keep-together,.group-block{break-inside:avoid;page-break-inside:avoid}.group-block{margin:12px 0 18px}.group-block h3{font-size:13px;margin:10px 0 4px;color:#1e3a8a}
     @media print{body{margin:16mm}.print-button{display:none}.page-break{break-before:page}.keep-together{break-inside:avoid;page-break-inside:avoid}a{color:inherit;text-decoration:none}}
   </style></head><body>
   <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
@@ -403,6 +540,16 @@ export async function GET(req) {
     <table><thead><tr><th>Formula</th><th>Report values used</th></tr></thead><tbody>${calculationMethodRows(report)}</tbody></table>
   </section>
 
+  <section class="keep-together">
+    <h2>Distribution centers · Volume & cost split</h2>
+    <table><thead><tr><th>PLC</th><th>Current centers</th><th>Current %</th><th>Proposed centers</th><th>Proposed %</th><th>Δ $/wk</th></tr></thead><tbody>${distributionSplitRows(baseline.nodes, assignmentDetails, s.routeComparison)}</tbody></table>
+  </section>
+
+  <section class="keep-together">
+    <h2>Pickup frequency · centers</h2>
+    <table><thead><tr><th>Frequency</th><th>Current</th><th>Proposed</th><th>Δ</th></tr></thead><tbody>${pickupFrequencyRows(baseline.nodes, assignmentDetails)}</tbody></table>
+  </section>
+
   <section>
     <h2>Route-by-Route Comparison</h2>
     <p class="small">Rows marked Proposed-only / paired route impact are new proposed route groupings. Their negative row opportunity should not be read as standalone savings or cost increase. Portfolio opportunity comes from the Current vs Proposed visible totals.</p>
@@ -427,17 +574,22 @@ export async function GET(req) {
   </section>
 
   <section>
-    <h2>Frequency Changes</h2>
+    <h2>Frequency changes · all centers</h2>
     <table><thead><tr>
-      <th>Center</th><th>City, State</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Operational review note</th>
-    </tr></thead><tbody>${frequencyChangeRows(brief.frequencyChanges || s.centersChangedFrequency)}</tbody></table>
+      <th>Center</th><th>City</th><th>Cases/wk</th><th>From → To</th><th>Δ $/wk</th>
+    </tr></thead><tbody>${allFrequencyChangeRows(brief.frequencyChanges || s.centersChangedFrequency)}</tbody></table>
+  </section>
+
+  <section class="page-break">
+    <h2>Reroute group breakdown</h2>
+    ${rerouteGroupBlocks(brief.routeStopSequences || s.proposedStopSequences, s.routeComparison, baseline.nodes)}
   </section>
 
   <section class="page-break">
     <h2>Route Stop Sequences</h2>
     <p class="small">Stop-level cost allocation is directional and may not sum exactly to route-level proposed weekly cost. Use route-level proposed weekly cost for portfolio comparison.</p>
     <table><thead><tr>
-      <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>Workbook/source one-way miles</th><th>Estimated stop-level cost allocation</th>
+      <th>Proposed route name</th><th>Proposed PLC</th><th>Stop order</th><th>Center</th><th>City, State</th><th>Frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>PLC → stop one-way miles</th><th>Estimated stop-level cost allocation</th>
     </tr></thead><tbody>${routeStopSequenceRows(brief.routeStopSequences || s.proposedStopSequences)}</tbody></table>
   </section>
   </body></html>`;
