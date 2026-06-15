@@ -529,12 +529,12 @@ export async function GET(req) {
       <div class="metric"><span>Weekly pallets = cases / 70</span><b>${num(baselinePallets)}</b></div>
       <div class="metric"><span>Estimated annual opportunity</span><b>${esc(report.opportunityDisplay)}</b></div>
     </div>
-    ${isOptimizationReport ? `<p class="small">Scenario report totals source: Optimization Engine visible summary${hasOptimizationTotals && optTotals.routeCount !== null ? ` (${num(optTotals.routeCount)} route group${optTotals.routeCount === 1 ? '' : 's'})` : ''}.</p>` : ''}
+    ${isOptimizationReport ? `<p class="small">Current cost baseline uses the Active RFQ Excel subtotal from AQ342. Proposed scenario totals use the Optimization Engine visible scenario summary.</p>` : ''}
   </section>
 
   <section>
     <h2>Current vs Proposed Totals</h2>
-    <table><thead><tr><th>Metric</th><th>Current Visible Scenario Total</th><th>Proposed Visible Scenario Total</th><th>Opportunity / Delta</th></tr></thead><tbody>
+    <table><thead><tr><th>Metric</th><th>Current Active RFQ Baseline</th><th>Proposed Visible Scenario Total</th><th>Opportunity / Delta</th></tr></thead><tbody>
       <tr><td>Weekly cost</td><td class="money">${moneyOrMessage(report.currentWeeklyCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${moneyOrMessage(report.proposedWeeklyCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${esc(report.weeklyOpportunityDisplay)}</td></tr>
       <tr><td>Annual cost</td><td class="money">${moneyOrMessage(report.currentAnnualCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${moneyOrMessage(report.proposedAnnualCost, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td class="money">${esc(report.opportunityDisplay)}</td></tr>
       <tr><td>Weekly miles</td><td>${numOrMessage(report.currentWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>${numOrMessage(report.proposedWeeklyMiles, isOptimizationReport ? TOTALS_UNAVAILABLE : 'Unavailable')}</td><td>Directional estimate — mileage basis differs and needs review</td></tr>
