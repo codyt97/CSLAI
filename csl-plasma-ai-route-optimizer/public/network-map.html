@@ -2043,6 +2043,19 @@ function nearestNeighborSequence(stops, plcName){
   const seq = sequenceStopsFromPLC(rawStops, plcName);
   return {sequence:seq.sequence.map(raw=>({raw, center:raw.routeName, city:raw.city, state:raw.state})), miles:seq.roadMiles};
 }
+function optimizationProposedVisibleWeeklyCost(rows){
+  const proposedRows = (rows||[]).filter(r => Number.isFinite(Number(r.newTotal)) && Number(r.currentTotal) > 0);
+  return proposedRows.length ? proposedRows.reduce((a,r)=>a+(Number(r.newTotal)||0),0) : null;
+}
+function optimizationAnnualOpportunityFromActiveRfq(rows){
+  const proposedVisibleWeeklyCost = optimizationProposedVisibleWeeklyCost(rows);
+  if(proposedVisibleWeeklyCost === null) return null;
+  return (ACTIVE_RFQ_BASELINE.weeklyCost - proposedVisibleWeeklyCost) * ACTIVE_RFQ_BASELINE.annualizationWeeks;
+}
+function optimizationWeeklyOpportunityFromActiveRfq(rows){
+  const proposedVisibleWeeklyCost = optimizationProposedVisibleWeeklyCost(rows);
+  return proposedVisibleWeeklyCost === null ? null : ACTIVE_RFQ_BASELINE.weeklyCost - proposedVisibleWeeklyCost;
+}
 function updateOptimizationKpis(rows){
   const routeCount = rows.length;
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
@@ -2051,7 +2064,7 @@ function updateOptimizationKpis(rows){
   const pallets = rows.reduce((a,r)=>a+r.pallets,0);
   const milesSaved = rows.reduce((a,r)=>a+Math.max(0,r.milesSaved),0);
   const weeklySavings = rows.reduce((a,r)=>a+Math.max(0,r.weeklySavings),0);
-  const annualSavings = weeklySavings * 52;
+  const annualSavings = optimizationAnnualOpportunityFromActiveRfq(rows);
   const weeklyFuelSaved = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   $('kpiCentersLabel').textContent = 'Routes';
   $('kpiCenters').textContent = fmt0(routeCount);
@@ -2061,7 +2074,7 @@ function updateOptimizationKpis(rows){
   $('kpiPallets').textContent = fmt1(pallets);
   $('kpiMiles').textContent = fmt0(milesSaved);
   $('kpiCost').textContent = money2(weeklyFuelSaved).replace('.00','');
-  $('kpiCostCase').textContent = money2(annualSavings).replace('.00','');
+  $('kpiCostCase').textContent = annualSavings === null ? '—' : money2(annualSavings).replace('.00','');
 }
 function updateOptimizationTable(rows, mode){
   const table = $('resultsTable');
@@ -2121,11 +2134,13 @@ function refreshOptimization(){
   }
   const milesSaved = rows.reduce((a,r)=>a+Math.max(0,r.milesSaved),0);
   const weeklySavings = rows.reduce((a,r)=>a+Math.max(0,r.weeklySavings),0);
-  const annualSavings = weeklySavings*52;
+  const proposedVisibleWeeklyCost = optimizationProposedVisibleWeeklyCost(rows);
+  const activeRfqWeeklyOpportunity = optimizationWeeklyOpportunityFromActiveRfq(rows);
+  const annualSavings = optimizationAnnualOpportunityFromActiveRfq(rows);
   const fuelSavings = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
   const relay = rows.filter(r=>r.isRelay).length;
-  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Estimated weekly total savings: <b>${money2(weeklySavings)}</b><br/>Estimated annual opportunity: <b>${money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Opportunities are route-level: full scheduled source route miles vs proposed rebuilt route totals. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
+  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Visible route-group raw current cost: <b>${money2(rows.reduce((a,r)=>a+(Number(r.currentTotal)||0),0))}</b><br/>Proposed visible weekly cost: <b>${proposedVisibleWeeklyCost === null ? '—' : money2(proposedVisibleWeeklyCost)}</b><br/>Estimated weekly total savings: <b>${activeRfqWeeklyOpportunity === null ? '—' : money2(activeRfqWeeklyOpportunity)}</b><br/>Estimated annual opportunity: <b>${annualSavings === null ? '—' : money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Proposed costs use the Optimization Engine visible scenario summary. Route-level rows remain directional scenario detail. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
   $('mapTitle').textContent = `Route Optimization Engine: ${mode === 'routes' ? 'Route Summary' : mode === 'sequence' ? 'Stop Sequence' : 'Route Rebuild Recommendations'}`;
   $('visiblePill').textContent = `${fmt0(rows.length)} route groups`;
   if(bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:6});
@@ -2943,10 +2958,10 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     }
     if(window.codyOptShowAllRoutes && !selected){
       const routeCount = rows.length;
-      const annual = rows.reduce((a,x)=>a+Math.max(0,x.annualSavings||0),0);
+      const annual = optimizationAnnualOpportunityFromActiveRfq(rows);
       dashboard.innerHTML = `
         <div class="opt-decision-card"><h3>Portfolio view</h3><div class="opt-big-number">${fmt0(routeCount)} routes</div><div class="opt-explain">You are reviewing all visible route groups. Select one route to see the full step-by-step workflow.</div></div>
-        <div class="opt-decision-card"><h3>Estimated annual opportunity</h3><div class="opt-big-number">${money2(annual).replace('.00','')}</div><div class="opt-explain">Planning estimate only. Actual road miles and route feasibility must be validated.</div></div>
+        <div class="opt-decision-card"><h3>Estimated annual opportunity</h3><div class="opt-big-number">${annual === null ? '—' : money2(annual).replace('.00','')}</div><div class="opt-explain">Planning estimate only. Actual road miles and route feasibility must be validated.</div></div>
         <div class="opt-decision-card"><h3>Next best action</h3><span class="opt-action-badge warn">Choose one route</span><div class="opt-explain">Click a route row below or use the Route dropdown to drill into one route workflow.</div></div>`;
       return;
     }
