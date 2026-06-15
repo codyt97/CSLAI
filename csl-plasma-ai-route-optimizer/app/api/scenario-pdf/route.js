@@ -244,14 +244,14 @@ function calculationMethodRows(report) {
   const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
   const rows = [
     ['Active RFQ Annual Baseline Cost = Active RFQ Weekly Baseline Cost × 52', `${money(baselineWeekly)} × 52 = ${money(baselineWeekly * 52)}`],
-    ['Current Visible Annual Cost = Current Visible Weekly Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
+    ['Current Annual Cost = Active RFQ Weekly Baseline Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × 52 = ${money(currentWeekly * 52)}` : 'Unavailable'],
     ['Proposed Visible Annual Cost = Proposed Visible Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × 52 = ${money(proposedWeekly * 52)}` : 'Unavailable'],
-    ['Current Visible Weekly Cost = Sum of visible Optimization Engine current weekly costs', calculationValue(currentWeekly)],
+    ['Current Weekly Cost = Active RFQ Excel subtotal from AQ342', calculationValue(currentWeekly)],
     ['Proposed Visible Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
     ['Proposed Weekly Cost basis', "Proposed visible weekly cost is the sum of proposed weekly costs from the Optimization Engine visible scenario table. Directional proposed route cost is based on scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
     ['Implied Scenario $/Mile = Proposed Visible Weekly Cost ÷ Scenario Routed Miles', Number.isFinite(impliedRate) ? `${money(proposedWeekly)} ÷ ${num(proposedMiles)} = ${money(impliedRate)} per mile` : 'Unavailable'],
     ['Proposed Visible Weekly Cost = Scenario Routed Miles × Implied Scenario $/Mile', Number.isFinite(impliedRate) ? `${num(proposedMiles)} × ${money(impliedRate)} = ${money(proposedWeekly)}` : 'Unavailable'],
-    ['Weekly Opportunity = Current Visible Weekly Cost - Proposed Visible Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
+    ['Weekly Opportunity = Active RFQ Weekly Baseline Cost - Proposed Visible Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
     ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × 52 = ${money(weeklyOpportunity * 52)}` : 'Unavailable'],
     ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
     ['Estimated 48-ft Trailer Equivalents = Total Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable'],
@@ -264,11 +264,11 @@ function optimizationTotals(searchParams) {
   if (searchParams.get('source') !== 'optimization') return null;
   if (searchParams.get('totalsAvailable') !== 'true') return { available: false };
 
-  const weeklyOpportunity = paramNumber(searchParams, 'weeklyOpportunity');
-  const annualOpportunity = paramNumber(searchParams, 'annualOpportunity');
-  const currentWeeklyCost = paramNumber(searchParams, 'currentWeeklyCost');
+  const currentWeeklyCost = ACTIVE_RFQ_BASELINE.weeklyCost;
   const proposedWeeklyCost = paramNumber(searchParams, 'proposedWeeklyCost');
-  const currentAnnualCost = paramNumber(searchParams, 'currentAnnualCost') ?? (currentWeeklyCost === null ? null : currentWeeklyCost * 52);
+  const weeklyOpportunity = proposedWeeklyCost === null ? null : currentWeeklyCost - proposedWeeklyCost;
+  const annualOpportunity = weeklyOpportunity === null ? null : weeklyOpportunity * 52;
+  const currentAnnualCost = currentWeeklyCost * 52;
   const proposedAnnualCost = paramNumber(searchParams, 'proposedAnnualCost') ?? (proposedWeeklyCost === null ? null : proposedWeeklyCost * 52);
   return {
     available: true,
