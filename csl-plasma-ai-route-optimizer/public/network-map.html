@@ -620,7 +620,7 @@ const ACTIVE_RFQ_BASELINE = {
   openActiveCenters: 296,
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
-  annualCost: 17472545.31,
+  annualCost: 364011.36 * 52,
   weeklyCases: 35439.52,
   weeklyLiters: 408533.22,
   weeklyMiles: 40429.02,
@@ -3713,10 +3713,11 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const portfolioRows = routeKpis.filter(r=>!isProposedOnlyRouteKpi(r) && r.proposedWeeklyCost !== null);
     const sumField = (field) => routeKpis.reduce((a,r)=>a+(Number(r[field])||0),0);
     const sumPortfolioField = (field) => portfolioRows.reduce((a,r)=>a+(Number(r[field])||0),0);
-    const totalCurrentWeeklyCost = sumField('currentWeeklyCost');
+    const visibleRouteGroupRawCurrentCost = sumField('currentWeeklyCost');
     const directTotal = (routes||[]).reduce((a,r)=>a+(Number(r.currentTotal)||0),0);
-    if(Math.abs(totalCurrentWeeklyCost - directTotal) > 0.01) console.warn('Portfolio current weekly cost mismatch.', {totalCurrentWeeklyCost, sumOfRouteCurrentWeeklyCost:directTotal});
-    const portfolioCurrentWeeklyCost = sumPortfolioField('currentWeeklyCost');
+    if(Math.abs(visibleRouteGroupRawCurrentCost - directTotal) > 0.01) console.warn('Portfolio route-group rollup cost mismatch.', {visibleRouteGroupRawCurrentCost, sumOfRouteCurrentWeeklyCost:directTotal});
+    const portfolioCurrentWeeklyCost = ACTIVE_RFQ_BASELINE.weeklyCost;
+    const routeGroupRollupCost = sumPortfolioField('currentWeeklyCost');
     const totalProposedWeeklyCost = portfolioRows.length ? sumPortfolioField('proposedWeeklyCost') : null;
     const totalWeeklyOpportunity = totalProposedWeeklyCost !== null ? portfolioCurrentWeeklyCost - totalProposedWeeklyCost : null;
     return {
@@ -3731,8 +3732,10 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       totalWeeklyPallets: sumField('weeklyPallets'),
       totalCurrentWorkbookMiles: sumField('currentSourceMiles'),
       totalCurrentWeeklyCost: portfolioCurrentWeeklyCost,
-      displayedRouteCurrentWeeklyCost: totalCurrentWeeklyCost,
-      portfolioCostPerCase: guardedCostPerCase(safeDivide(portfolioCurrentWeeklyCost, sumField('weeklyCases')), portfolioCurrentWeeklyCost, null, 'Portfolio'),
+      routeGroupRollupCost,
+      visibleRouteGroupRawCurrentCost,
+      displayedRouteCurrentWeeklyCost: visibleRouteGroupRawCurrentCost,
+      portfolioCostPerCase: guardedCostPerCase(safeDivide(portfolioCurrentWeeklyCost, ACTIVE_RFQ_BASELINE.weeklyCases), portfolioCurrentWeeklyCost, null, 'Portfolio'),
       portfolioCostPerMile: safeDivide(portfolioCurrentWeeklyCost, sumField('currentWorkbookMiles')),
       totalProposedEstimatedRoadMiles: sumPortfolioField('proposedScenarioMiles'),
       hasScenarioOnlyMileage: routeKpis.some(r=>!r.isMileageComparable),
@@ -3855,7 +3858,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         weeklyPallets:k.totalWeeklyPallets,
         proposedWeeklyPallets:k.totalWeeklyPallets
       };
-      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Operational opportunity only. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.${mileageNote}</div>`;
+      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.${mileageNote}</div>`;
     }
   }
 
@@ -3907,7 +3910,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         weeklyPallets:k.totalWeeklyPallets,
         proposedWeeklyPallets:k.totalWeeklyPallets
       };
-      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Operational opportunity only. Directional estimate — requires McKesson / RFQ validation.${mileageNote}${proposedOnlyNote}</div>`;
+      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Operational opportunity only. Directional estimate — requires McKesson / RFQ validation.${mileageNote}${proposedOnlyNote}</div>`;
     }
   };
 
@@ -4153,7 +4156,7 @@ async function loadMaxSavingsScenario(){
 }
 function renderMaxSavingsScenario(s){
   const out=$('maxSavingsOutput'); if(!out||!s) return;
-  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Scenario Routed Miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Active RFQ weekly baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.weeklyCost)}</b></div><div class="scenario-kpi">Active RFQ annual baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.annualCost)}</b></div><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Scenario Routed Miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
 }
 function renderPricingFormulaInvestigator(p){
   const out=$('pricingFormulaOutput'); if(!out) return;

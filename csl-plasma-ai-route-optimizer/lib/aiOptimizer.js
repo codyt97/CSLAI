@@ -137,6 +137,16 @@ const SCENARIO_TYPES = {
   MAX: 'Max Savings Optimization'
 };
 
+export const ACTIVE_RFQ_BASELINE = {
+  weeklyCost: 364011.36,
+  annualCost: 364011.36 * 52,
+  centers: 296,
+  weeklyCases: 35439.52,
+  weeklyLiters: 408533.22,
+  casesPerPallet: 70,
+  weeklyPallets: 35439.52 / 70
+};
+
 const DEFAULT_PRICING_ASSUMPTIONS = {
   ratePerMile: 3.34,
   baseDispatchFee: 250,
@@ -705,7 +715,15 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
   const plcMoves = optimizePLCAssignments(currentRoutes, scenarioType).filter((m) => m.weeklyScenarioSavings > 0);
   const frequencyChanges = optimizePickupFrequency(currentRoutes, scenarioType).filter((m) => m.weeklyScenarioSavings > 0);
   const validation = validateScenarioNetwork(currentRoutes, proposedRoutes, frequencyChanges);
-  const currentTotals = calculateNetworkTotals(currentRoutes);
+  const routeGroupCurrentTotals = calculateNetworkTotals(currentRoutes);
+  const currentTotals = {
+    ...routeGroupCurrentTotals,
+    centerCount: ACTIVE_RFQ_BASELINE.centers,
+    weeklyCases: ACTIVE_RFQ_BASELINE.weeklyCases,
+    weeklyPallets: roundScenario(ACTIVE_RFQ_BASELINE.weeklyPallets),
+    weeklyCost: ACTIVE_RFQ_BASELINE.weeklyCost,
+    annualCost: roundScenario(ACTIVE_RFQ_BASELINE.annualCost)
+  };
   const proposedTotals = calculateNetworkTotals(proposedRoutes);
   const deltaTotals = {
     weeklyCases: roundScenario(proposedTotals.weeklyCases - currentTotals.weeklyCases),
@@ -722,7 +740,7 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
   const currentRouteNames = new Set(currentRoutes.map((r) => r.routeName));
   const proposedSourceNames = new Set(proposedRoutes.flatMap((r) => r.sourceRoutes || []));
   const routesRemoved = [...currentRouteNames].filter((name) => !proposedSourceNames.has(name));
-  const scenarioSavings = roundScenario(currentTotals.weeklyCost - proposedTotals.weeklyCost);
+  const scenarioSavings = roundScenario(ACTIVE_RFQ_BASELINE.weeklyCost - proposedTotals.weeklyCost);
   const warnings = [...validation.validationWarnings];
   if (plcMoves.length) warnings.push('PLC reassignments require McKesson repricing and contract mileage validation.');
   if (frequencyChanges.length) warnings.push('Weekly to Bi-Weekly pickup frequency changes require CSL/McKesson operational approval and cold-chain hold validation.');
@@ -730,6 +748,8 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
   return {
     scenarioName: scenarioType === SCENARIO_TYPES.MAX ? 'Max Savings AI Optimizer Scenario' : scenarioType,
     scenarioType,
+    activeRfqBaseline: ACTIVE_RFQ_BASELINE,
+    routeGroupCurrentTotals,
     currentTotals,
     proposedTotals,
     deltaTotals,
