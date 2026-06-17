@@ -614,6 +614,7 @@ function badge(text, cls='badge-gray'){ return `<span class="badge ${cls}">${tex
 function normText(v){ return String(v ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); }
 const ACTIVE_RELAY_ROUTES = new Set(['ALLENTOWN','PHILLY','PHILADELPHIA','BUFFALO']);
 const NOT_MCKESSON_SERVICED_KEYS = new Set(['COLUMBUS561','MCALLEN549','BAYAMON955','CAGUAS954']);
+const REPORTING_ANNUALIZATION_WEEKS = 52;
 const ACTIVE_RFQ_BASELINE = {
   category: 'Active RFQ Baseline',
   activeCenters: 296,
@@ -621,7 +622,7 @@ const ACTIVE_RFQ_BASELINE = {
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
   annualCost: 17472545.31,
-  annualizationWeeks: 48,
+  annualizationWeeks: REPORTING_ANNUALIZATION_WEEKS,
   monthlyMultiplier: 4,
   annualMonths: 12,
   weeklyCases: 35439.52,
@@ -814,11 +815,11 @@ function isFullActiveBaselineSlice(rows, activeRows){ return rows === records ||
 function sumActiveRfq(rows){
   const activeRows=getActiveRfqRows(rows);
   if(isFullActiveBaselineSlice(rows, activeRows)){
-    return {category:'Active RFQ Baseline', rows:activeRows, centers:ACTIVE_RFQ_BASELINE.activeCenters, open:ACTIVE_RFQ_BASELINE.openActiveCenters, cases:ACTIVE_RFQ_BASELINE.weeklyCases, liters:ACTIVE_RFQ_BASELINE.weeklyLiters, pallets:activeBaselinePallets(), miles:ACTIVE_RFQ_BASELINE.weeklyMiles, cost:ACTIVE_RFQ_BASELINE.weeklyCost, monthlyCost:ACTIVE_RFQ_BASELINE.monthlyCost, annualCost:ACTIVE_RFQ_BASELINE.annualCost};
+    return {category:'Active RFQ Baseline', rows:activeRows, centers:ACTIVE_RFQ_BASELINE.activeCenters, open:ACTIVE_RFQ_BASELINE.openActiveCenters, cases:ACTIVE_RFQ_BASELINE.weeklyCases, liters:ACTIVE_RFQ_BASELINE.weeklyLiters, pallets:activeBaselinePallets(), miles:ACTIVE_RFQ_BASELINE.weeklyMiles, cost:ACTIVE_RFQ_BASELINE.weeklyCost, monthlyCost:ACTIVE_RFQ_BASELINE.monthlyCost, annualCost:ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS};
   }
   const cases=activeRows.reduce((a,r)=>a+getRfqWeeklyCases(r),0);
   const cost=activeRows.reduce((a,r)=>a+getRfqWeeklyCost(r),0);
-  return {category:'Active RFQ Baseline filtered view', rows:activeRows, centers:activeRows.length, open:activeRows.length, cases, liters:activeRows.reduce((a,r)=>a+(Number(r.weeklyLiters)||0),0), pallets:baselinePalletsFromCases(cases), miles:activeRows.reduce((a,r)=>a+getRfqWeeklyMiles(r),0), cost, monthlyCost:cost*ACTIVE_RFQ_BASELINE.monthlyMultiplier, annualCost:cost*ACTIVE_RFQ_BASELINE.annualizationWeeks};
+  return {category:'Active RFQ Baseline filtered view', rows:activeRows, centers:activeRows.length, open:activeRows.length, cases, liters:activeRows.reduce((a,r)=>a+(Number(r.weeklyLiters)||0),0), pallets:baselinePalletsFromCases(cases), miles:activeRows.reduce((a,r)=>a+getRfqWeeklyMiles(r),0), cost, monthlyCost:cost*ACTIVE_RFQ_BASELINE.monthlyMultiplier, annualCost:cost*REPORTING_ANNUALIZATION_WEEKS};
 }
 function isActiveRelayRoute(r){
   const route = normText(getRouteName(r));
@@ -2050,7 +2051,7 @@ function optimizationProposedVisibleWeeklyCost(rows){
 function optimizationAnnualOpportunityFromActiveRfq(rows){
   const proposedVisibleWeeklyCost = optimizationProposedVisibleWeeklyCost(rows);
   if(proposedVisibleWeeklyCost === null) return null;
-  return (ACTIVE_RFQ_BASELINE.weeklyCost - proposedVisibleWeeklyCost) * ACTIVE_RFQ_BASELINE.annualizationWeeks;
+  return (ACTIVE_RFQ_BASELINE.weeklyCost - proposedVisibleWeeklyCost) * REPORTING_ANNUALIZATION_WEEKS;
 }
 function optimizationWeeklyOpportunityFromActiveRfq(rows){
   const proposedVisibleWeeklyCost = optimizationProposedVisibleWeeklyCost(rows);
@@ -2140,7 +2141,7 @@ function refreshOptimization(){
   const fuelSavings = rows.reduce((a,r)=>a+Math.max(0,r.fuelSavings),0);
   const stops = rows.reduce((a,r)=>a+r.stopCount,0);
   const relay = rows.filter(r=>r.isRelay).length;
-  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Visible route-group raw current cost: <b>${money2(rows.reduce((a,r)=>a+(Number(r.currentTotal)||0),0))}</b><br/>Proposed visible weekly cost: <b>${proposedVisibleWeeklyCost === null ? '—' : money2(proposedVisibleWeeklyCost)}</b><br/>Estimated weekly total savings: <b>${activeRfqWeeklyOpportunity === null ? '—' : money2(activeRfqWeeklyOpportunity)}</b><br/>Estimated annual opportunity: <b>${annualSavings === null ? '—' : money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Proposed costs use the Optimization Engine visible scenario summary. Route-level rows remain directional scenario detail. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
+  $('plcSummary').innerHTML = `<b>Route Optimization Engine Summary</b><br/>Visible route groups: <b>${fmt0(rows.length)}</b> · Stops inside those routes: <b>${fmt0(stops)}</b><br/>Mileage Delta: <b>Directional estimate — mileage basis differs and requires validation</b><br/>Estimated weekly fuel savings: <b>${money2(fuelSavings)}</b><br/>Visible route-group raw current cost: <b>${money2(rows.reduce((a,r)=>a+(Number(r.currentTotal)||0),0))}</b><br/>Proposed visible weekly cost: <b>${proposedVisibleWeeklyCost === null ? '—' : money2(proposedVisibleWeeklyCost)}</b><br/>Estimated weekly total savings: <b>${activeRfqWeeklyOpportunity === null ? '—' : money2(activeRfqWeeklyOpportunity)}</b><br/>Estimated annual opportunity: <b>${annualSavings === null ? '—' : money2(annualSavings)}</b><br/>Relay/Base≠Actual route groups visible: <b>${fmt0(relay)}</b><div class="mini-note">Annualized using 52-week calendar run-rate. Excel RFQ workbook may use a 4-week month / 48-week accounting convention; weekly baseline remains sourced from Active RFQ data. Proposed costs use the Optimization Engine visible scenario summary. Route-level rows remain directional scenario detail. New route pricing uses <b>${DATA.rateTable?.sourceSheet || 'Rate Table'}</b>: ${money2(optimizationDedicatedRate())}/mile and ${(optimizationFuelPct()*100).toFixed(2)}% fuel surcharge. It does not assume each center ships separately.</div>`;
   $('mapTitle').textContent = `Route Optimization Engine: ${mode === 'routes' ? 'Route Summary' : mode === 'sequence' ? 'Stop Sequence' : 'Route Rebuild Recommendations'}`;
   $('visiblePill').textContent = `${fmt0(rows.length)} route groups`;
   if(bounds.length) map.fitBounds(bounds, {padding:[35,35], maxZoom:6});
@@ -3695,7 +3696,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const proposedWeeklyCost = finiteNumberOrNull(route.newTotal);
     const isProposedOnlyImpact = currentWeeklyCost === null || currentWeeklyCost <= 0 || currentSourceMiles === null || currentSourceMiles <= 0;
     const weeklyOpportunity = currentWeeklyCost !== null && proposedWeeklyCost !== null ? currentWeeklyCost - proposedWeeklyCost : null;
-    const annualOpportunity = weeklyOpportunity !== null ? weeklyOpportunity * 52 : null;
+    const annualOpportunity = weeklyOpportunity !== null ? weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS : null;
     const rawCostPerCase = safeDivide(currentWeeklyCost, weeklyCases);
     const currentCostPerCase = guardedCostPerCase(rawCostPerCase, currentWeeklyCost, annualOpportunity, route.route);
     const currentCostPerMile = safeDivide(currentWeeklyCost, currentWorkbookMiles);
@@ -3759,7 +3760,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       hasScenarioOnlyMileage: routeKpis.some(r=>!r.isMileageComparable),
       totalProposedWeeklyCost,
       totalWeeklyOpportunity,
-      totalAnnualOpportunity: totalWeeklyOpportunity !== null ? totalWeeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks : null
+      totalAnnualOpportunity: totalWeeklyOpportunity !== null ? totalWeeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS : null
     };
   }
   function setKpiLabel(id, label){ const el=$(id); const labelEl=el?.parentElement?.querySelector('.label'); if(labelEl) labelEl.textContent=label; }
@@ -3845,8 +3846,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:proposedOnly ? null : k.annualOpportunity,
         currentWeeklyCost:k.currentWeeklyCost,
         proposedWeeklyCost:k.proposedWeeklyCost,
-        currentAnnualCost:Number(k.currentWeeklyCost || 0) * 52,
-        proposedAnnualCost:Number(k.proposedWeeklyCost || 0) * 52,
+        currentAnnualCost:Number(k.currentWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
+        proposedAnnualCost:Number(k.proposedWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
         currentWeeklyMiles:k.currentSourceMiles,
         proposedWeeklyMiles:k.proposedScenarioMiles,
         weeklyCases:k.weeklyCases,
@@ -3867,8 +3868,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:k.totalAnnualOpportunity,
         currentWeeklyCost:k.totalCurrentWeeklyCost,
         proposedWeeklyCost:k.totalProposedWeeklyCost,
-        currentAnnualCost:ACTIVE_RFQ_BASELINE.annualCost,
-        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * ACTIVE_RFQ_BASELINE.annualizationWeeks,
+        currentAnnualCost:ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS,
+        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
         currentWeeklyMiles:k.totalCurrentWorkbookMiles,
         proposedWeeklyMiles:k.totalProposedEstimatedRoadMiles,
         weeklyCases:k.totalWeeklyCases,
@@ -3876,7 +3877,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         weeklyPallets:k.totalWeeklyPallets,
         proposedWeeklyPallets:k.totalWeeklyPallets
       };
-      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.${mileageNote}</div>`;
+      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Annualized using 52-week calendar run-rate. Excel RFQ workbook may use a 4-week month / 48-week accounting convention; weekly baseline remains sourced from Active RFQ data. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Proposed costs use estimated route pricing and require contract rating or McKesson repricing confirmation.${mileageNote}</div>`;
     }
   }
 
@@ -3896,8 +3897,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:proposedOnly ? null : k.annualOpportunity,
         currentWeeklyCost:k.currentWeeklyCost,
         proposedWeeklyCost:k.proposedWeeklyCost,
-        currentAnnualCost:Number(k.currentWeeklyCost || 0) * 52,
-        proposedAnnualCost:Number(k.proposedWeeklyCost || 0) * 52,
+        currentAnnualCost:Number(k.currentWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
+        proposedAnnualCost:Number(k.proposedWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
         currentWeeklyMiles:k.currentSourceMiles,
         proposedWeeklyMiles:k.proposedScenarioMiles,
         weeklyCases:k.weeklyCases,
@@ -3919,8 +3920,8 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         annualOpportunity:k.totalAnnualOpportunity,
         currentWeeklyCost:k.totalCurrentWeeklyCost,
         proposedWeeklyCost:k.totalProposedWeeklyCost,
-        currentAnnualCost:ACTIVE_RFQ_BASELINE.annualCost,
-        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * ACTIVE_RFQ_BASELINE.annualizationWeeks,
+        currentAnnualCost:ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS,
+        proposedAnnualCost:k.totalProposedWeeklyCost === null ? null : Number(k.totalProposedWeeklyCost || 0) * REPORTING_ANNUALIZATION_WEEKS,
         currentWeeklyMiles:k.totalCurrentWorkbookMiles,
         proposedWeeklyMiles:k.totalProposedEstimatedRoadMiles,
         weeklyCases:k.totalWeeklyCases,
@@ -3928,7 +3929,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
         weeklyPallets:k.totalWeeklyPallets,
         proposedWeeklyPallets:k.totalWeeklyPallets
       };
-      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Operational opportunity only. Directional estimate — requires McKesson / RFQ validation.${mileageNote}${proposedOnlyNote}</div>`;
+      summary.innerHTML = `<b>Portfolio route optimization summary</b><br/>Visible route groups: <b>${fmt0(k.routeCount)}</b> · Open/scheduled centers: <b>${fmt0(k.openScheduledCenters)}</b><br/>Total current weekly cost: <b>${formatMoney(k.totalCurrentWeeklyCost)}</b> · Total proposed weekly cost: <b>${formatMoney(k.totalProposedWeeklyCost)}</b><br/>Total weekly opportunity: <b>${formatMoney(k.totalWeeklyOpportunity)}</b> · Estimated annual opportunity: <b>${formatMoney(k.totalAnnualOpportunity)}</b><div class="mini-note">Annualized using 52-week calendar run-rate. Excel RFQ workbook may use a 4-week month / 48-week accounting convention; weekly baseline remains sourced from Active RFQ data. Route-level rows remain directional scenario detail. Visible route-group raw current cost: ${formatMoney(k.visibleRouteGroupRawCurrentCost)}. Operational opportunity only. Directional estimate — requires McKesson / RFQ validation.${mileageNote}${proposedOnlyNote}</div>`;
     }
   };
 
@@ -4174,7 +4175,7 @@ async function loadMaxSavingsScenario(){
 }
 function renderMaxSavingsScenario(s){
   const out=$('maxSavingsOutput'); if(!out||!s) return;
-  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Active RFQ weekly baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.weeklyCost)}</b></div><div class="scenario-kpi">Active RFQ annual baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.annualCost)}</b></div><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Current portfolio baseline uses the Active RFQ Excel subtotal from AQ342. Route-level rows remain directional scenario detail. Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Scenario Routed Miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
+  out.innerHTML=`<div class="ai-title">${esc2(s.scenarioName)}</div><div class="scenario-kpis"><div class="scenario-kpi">Active RFQ weekly baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.weeklyCost)}</b></div><div class="scenario-kpi">52-week annualized baseline<b>${moneyScenario(ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS)}</b></div><div class="scenario-kpi">Annual scenario savings<b>${moneyScenario(s.annualScenarioSavings)}</b></div><div class="scenario-kpi">Weekly scenario savings<b>${moneyScenario(s.weeklyScenarioSavings)}</b></div><div class="scenario-kpi">Weekly miles reduced<b>${numberScenario(-s.deltaTotals.weeklyMiles)}</b></div><div class="scenario-kpi">Driver hours reduced<b>${numberScenario(-s.deltaTotals.driverHours)}</b></div><div class="scenario-kpi">Fuel cost reduced<b>${moneyScenario(-s.deltaTotals.fuelCost)}</b></div><div class="scenario-kpi">CO2 kg reduced<b>${numberScenario(-s.deltaTotals.co2Kg)}</b></div><div class="scenario-kpi">Centers reassigned<b>${s.centersReassignedPLC.length}</b></div><div class="scenario-kpi">Frequency changes<b>${s.centersChangedFrequency.length}</b></div><div class="scenario-kpi">Routes created<b>${s.routesCreated.length}</b></div><div class="scenario-kpi">Routes removed<b>${s.routesRemoved.length}</b></div><div class="scenario-kpi">Validation warnings<b>${s.validationWarnings.length}</b></div></div><b>Source note:</b> Annualized using 52-week calendar run-rate. Excel RFQ workbook may use a 4-week month / 48-week accounting convention; weekly baseline remains sourced from Active RFQ data. Route-level rows remain directional scenario detail. Scenario savings are operational opportunity and require McKesson repricing and contract mileage validation.<h3>Validation Warnings</h3><ul>${(s.validationWarnings||[]).map(w=>`<li>${esc2(w)}</li>`).join('')||'<li>None</li>'}</ul><h3>PLC Reassignments</h3><table><thead><tr><th>Center</th><th>Current Route</th><th>Proposed Route</th><th>From PLC</th><th>To PLC</th><th>Weekly scenario savings</th><th>Risk</th></tr></thead><tbody>${scenarioTableRows(s.centersReassignedPLC, [x=>`${x.centerNumber} ${x.centerName}`,'currentRoute','proposedRoute','currentPLC','proposedPLC',x=>moneyScenario(x.weeklyScenarioSavings),'riskLevel']) || '<tr><td colspan="7">None</td></tr>'}</tbody></table><h3>Frequency Changes</h3><table><thead><tr><th>Center</th><th>From</th><th>To</th><th>Approval</th></tr></thead><tbody>${scenarioTableRows(s.centersChangedFrequency,[x=>`${x.centerNumber} ${x.centerName}`,'currentPickupFrequency','proposedPickupFrequency',x=>'Pickup frequency approval required']) || '<tr><td colspan="4">None</td></tr>'}</tbody></table><h3>Route Comparison</h3><table><thead><tr><th>Route</th><th>PLC</th><th>Stops</th><th>Scenario Routed Miles</th><th>Proposed pallets</th><th>Current cost</th><th>Proposed cost</th><th>Delta cost</th></tr></thead><tbody>${scenarioTableRows((s.routeComparison||[]).slice(0,60), ['route','plc','stops','proposedMiles','proposedPallets',x=>moneyScenario(x.currentCost),x=>moneyScenario(x.proposedCost),x=>moneyScenario(x.deltaCost)])}</tbody></table>`;
 }
 function renderPricingFormulaInvestigator(p){
   const out=$('pricingFormulaOutput'); if(!out) return;
@@ -4268,7 +4269,7 @@ window.__plasmaDataQa = function(){
       activeCenters:ACTIVE_RFQ_BASELINE.activeCenters,
       weeklyCost:ACTIVE_RFQ_BASELINE.weeklyCost,
       monthlyCost:ACTIVE_RFQ_BASELINE.monthlyCost,
-      annualCost:ACTIVE_RFQ_BASELINE.annualCost,
+      annualCost:ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS,
       weeklyCases:ACTIVE_RFQ_BASELINE.weeklyCases,
       weeklyLiters:ACTIVE_RFQ_BASELINE.weeklyLiters,
       weeklyMiles:ACTIVE_RFQ_BASELINE.weeklyMiles,

@@ -130,6 +130,8 @@ function fallbackResult({ scope, candidates, reason }) {
 
 const MAX_SAVINGS_ALLOWED_PLCS = ['Dallas PLC', 'Whitestown PLC'];
 const CO2_KG_PER_MILE = 1.62;
+export const REPORTING_ANNUALIZATION_WEEKS = 52;
+
 const SCENARIO_TYPES = {
   CURRENT: 'Current Baseline',
   CONSERVATIVE: 'Conservative Optimization',
@@ -141,7 +143,7 @@ export const ACTIVE_RFQ_BASELINE = {
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
   annualCost: 17472545.31,
-  annualizationWeeks: 48,
+  annualizationWeeks: REPORTING_ANNUALIZATION_WEEKS,
   monthlyMultiplier: 4,
   annualMonths: 12,
   centers: 296,
@@ -322,7 +324,7 @@ export function buildPricingFormulaInvestigator({ assumptions = {}, limit = 60 }
         currentWeeklyCost: current.total,
         proposedWeeklyCost: candidate.proposedWeeklyCost,
         weeklyOpportunity,
-        annualOpportunity: roundScenario(weeklyOpportunity * 52),
+        annualOpportunity: roundScenario(weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS),
         miles: roundScenario(route.weeklyMiles ?? route.currentPathMiles ?? route.workbookMiles ?? 0),
         stops: route.stopCount || route.stops?.length || 0,
         pallets: roundScenario(routePallets(route)),
@@ -487,7 +489,7 @@ export function calculateNetworkTotals(routeGroups = []) {
     fuelCost: roundScenario(sumScenario(routeGroups.map((r) => r.fuelCost ?? r.workbookFuel))),
     co2Kg: roundScenario(sumScenario(routeGroups.map((r) => r.co2Kg ?? calculateCo2Kg(r.weeklyMiles ?? r.currentPathMiles ?? 0)))),
     weeklyCost: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyCost ?? r.workbookTotalCost))),
-    annualCost: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyCost ?? r.workbookTotalCost)) * 52)
+    annualCost: roundScenario(sumScenario(routeGroups.map((r) => r.weeklyCost ?? r.workbookTotalCost)) * REPORTING_ANNUALIZATION_WEEKS)
   };
 }
 
@@ -726,12 +728,12 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
     weeklyCases: ACTIVE_RFQ_BASELINE.weeklyCases,
     weeklyPallets: roundScenario(ACTIVE_RFQ_BASELINE.weeklyPallets),
     weeklyCost: ACTIVE_RFQ_BASELINE.weeklyCost,
-    annualCost: roundScenario(ACTIVE_RFQ_BASELINE.annualCost)
+    annualCost: roundScenario(ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS)
   };
   const routeGroupProposedTotals = calculateNetworkTotals(proposedRoutes);
   const proposedTotals = {
     ...routeGroupProposedTotals,
-    annualCost: roundScenario(routeGroupProposedTotals.weeklyCost * ACTIVE_RFQ_BASELINE.annualizationWeeks)
+    annualCost: roundScenario(routeGroupProposedTotals.weeklyCost * REPORTING_ANNUALIZATION_WEEKS)
   };
   const deltaTotals = {
     weeklyCases: roundScenario(proposedTotals.weeklyCases - currentTotals.weeklyCases),
@@ -781,7 +783,7 @@ export function buildMaxSavingsScenario(mode = SCENARIO_TYPES.MAX) {
     annualCostCurrent: currentTotals.annualCost,
     annualCostProposed: proposedTotals.annualCost,
     weeklyScenarioSavings: scenarioSavings,
-    annualScenarioSavings: roundScenario(scenarioSavings * ACTIVE_RFQ_BASELINE.annualizationWeeks),
+    annualScenarioSavings: roundScenario(scenarioSavings * REPORTING_ANNUALIZATION_WEEKS),
     plcSplitCurrent: countScenario(currentRoutes, (r) => r.currentEndpointPLC),
     plcSplitProposed: countScenario(proposedRoutes, (r) => r.proposedPLC),
     pickupFrequencyCurrent: countScenario(buildOptimizationNodes(), (n) => n.currentPickupFrequency),

@@ -1,11 +1,11 @@
-import { buildCurrentNetworkBaseline, buildScenarioBriefData } from '../../../lib/aiOptimizer.js';
+import { buildCurrentNetworkBaseline, buildScenarioBriefData, REPORTING_ANNUALIZATION_WEEKS } from '../../../lib/aiOptimizer.js';
 
 const ACTIVE_RFQ_BASELINE = {
   activeCenters: 296,
   weeklyCost: 364011.36,
   monthlyCost: 1456045.44,
   annualCost: 17472545.31,
-  annualizationWeeks: 48,
+  annualizationWeeks: REPORTING_ANNUALIZATION_WEEKS,
   monthlyMultiplier: 4,
   annualMonths: 12,
   weeklyCases: 35439.52,
@@ -105,7 +105,7 @@ function routeRows(routeComparison, routeLookup) {
       ${td(money(row.currentCost), 'money')}
       ${td(money(row.proposedCost), 'money')}
       ${td(proposedOnlyCost ? 'Paired impact' : money(weeklyOpportunity), proposedOnlyCost ? '' : 'money')}
-      ${td(proposedOnlyCost ? 'Reflected in portfolio total' : money(weeklyOpportunity * 52), proposedOnlyCost ? '' : 'money')}
+      ${td(proposedOnlyCost ? 'Reflected in portfolio total' : money(weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS), proposedOnlyCost ? '' : 'money')}
       ${td(num(cases))}
       ${td(num(pallets))}
       ${td(`${num(utilization)}%`)}
@@ -393,7 +393,7 @@ function rerouteGroupBlocks(routeStopSequences = [], routeComparison = [], nodes
         <tr><th>Weekly pallets = cases / 70</th>${td(num(weeklyPallets))}<th>Workbook Allocated Source Miles</th>${td(numOrMessage(Number(comparison.currentMiles), 'Unavailable'))}</tr>
         <tr><th>Scenario Routed Miles</th>${td(numOrMessage(Number(comparison.proposedMiles), 'Unavailable'))}<th>Current weekly cost</th>${td(moneyOrMessage(currentWeeklyCost, 'Unavailable'), 'money')}</tr>
         <tr><th>Proposed weekly cost</th>${td(moneyOrMessage(proposedWeeklyCost, 'Unavailable'), 'money')}<th>Weekly opportunity</th>${td(proposedOnlyCost ? 'Paired impact' : weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity), proposedOnlyCost || weeklyOpportunity === null ? '' : 'money')}</tr>
-        <tr><th>Annual opportunity = weekly opportunity × 48</th>${td(proposedOnlyCost ? 'Reflected in portfolio total' : weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks), proposedOnlyCost || weeklyOpportunity === null ? '' : 'money')}<th>48-ft capacity = 24 pallets</th>${td('Applied')}</tr>
+        <tr><th>Annual opportunity = weekly opportunity × 52</th>${td(proposedOnlyCost ? 'Reflected in portfolio total' : weeklyOpportunity === null ? 'Unavailable' : money(weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS), proposedOnlyCost || weeklyOpportunity === null ? '' : 'money')}<th>48-ft capacity = 24 pallets</th>${td('Applied')}</tr>
       </tbody></table>
       <table><thead><tr><th>Center</th><th>City, State</th><th>Current route</th><th>Proposed route</th><th>Current PLC</th><th>Proposed PLC</th><th>Current frequency</th><th>Proposed frequency</th><th>Weekly cases</th><th>Weekly pallets</th><th>One-way miles</th><th>Estimated stop-level cost allocation</th></tr></thead><tbody>${details || '<tr><td colspan="12">Unavailable</td></tr>'}</tbody></table>
     </div>`;
@@ -414,16 +414,17 @@ function calculationMethodRows(report) {
   const weeklyCases = Number(report.weeklyCases);
   const weeklyPallets = Number.isFinite(Number(report.weeklyPallets)) ? Number(report.weeklyPallets) : (Number.isFinite(weeklyCases) ? palletsFromCases(weeklyCases) : NaN);
   const rows = [
-    ['Annual Baseline Cost = Weekly Baseline Cost × 4 weeks × 12 months', `${money(baselineWeekly)} × ${ACTIVE_RFQ_BASELINE.monthlyMultiplier} × ${ACTIVE_RFQ_BASELINE.annualMonths} = ${money(ACTIVE_RFQ_BASELINE.annualCost)}`],
-    ['Current Annual Cost = Active RFQ Weekly Baseline Cost × 48', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × ${ACTIVE_RFQ_BASELINE.annualizationWeeks} = ${money(ACTIVE_RFQ_BASELINE.annualCost)}` : 'Unavailable'],
-    ['Proposed Visible Annual Cost = Proposed Visible Weekly Cost × 48', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × ${ACTIVE_RFQ_BASELINE.annualizationWeeks} = ${money(proposedWeekly * ACTIVE_RFQ_BASELINE.annualizationWeeks)}` : 'Unavailable'],
+    ['Annual baseline shown as 52-week calendar run-rate = Weekly Baseline Cost × 52', Number.isFinite(baselineWeekly) ? `${money(baselineWeekly)} × ${REPORTING_ANNUALIZATION_WEEKS} = ${money(baselineWeekly * REPORTING_ANNUALIZATION_WEEKS)}` : 'Unavailable'],
+    ['Excel RFQ workbook accounting convention background', `${money(baselineWeekly)} × ${ACTIVE_RFQ_BASELINE.monthlyMultiplier} weeks/month × ${ACTIVE_RFQ_BASELINE.annualMonths} months = ${money(ACTIVE_RFQ_BASELINE.annualCost)}; not used for website/PDF portfolio opportunity reporting`],
+    ['Current Calendar-Year Run-Rate Cost = Active RFQ Weekly Baseline Cost × 52', Number.isFinite(currentWeekly) ? `${money(currentWeekly)} × ${REPORTING_ANNUALIZATION_WEEKS} = ${money(currentWeekly * REPORTING_ANNUALIZATION_WEEKS)}` : 'Unavailable'],
+    ['Proposed Visible Annual Cost = Proposed Visible Weekly Cost × 52', Number.isFinite(proposedWeekly) ? `${money(proposedWeekly)} × ${REPORTING_ANNUALIZATION_WEEKS} = ${money(proposedWeekly * REPORTING_ANNUALIZATION_WEEKS)}` : 'Unavailable'],
     ['Current Weekly Cost = Active RFQ Excel subtotal from AQ342', calculationValue(currentWeekly)],
     ['Proposed Visible Weekly Cost = Sum of visible Optimization Engine proposed weekly costs', calculationValue(proposedWeekly)],
     ['Proposed Weekly Cost basis', "Proposed visible weekly cost is the sum of proposed weekly costs from the Optimization Engine visible scenario table. Directional proposed route cost is based on scenario routed miles and implied scenario cost assumptions, then summed to the visible proposed weekly cost."],
     ['Implied Scenario $/Mile = Proposed Visible Weekly Cost ÷ Scenario Routed Miles', Number.isFinite(impliedRate) ? `${money(proposedWeekly)} ÷ ${num(proposedMiles)} = ${money(impliedRate)} per mile` : 'Unavailable'],
     ['Proposed Visible Weekly Cost = Scenario Routed Miles × Implied Scenario $/Mile', Number.isFinite(impliedRate) ? `${num(proposedMiles)} × ${money(impliedRate)} = ${money(proposedWeekly)}` : 'Unavailable'],
     ['Weekly Opportunity = Active RFQ Weekly Baseline Cost - Proposed Visible Weekly Cost', Number.isFinite(currentWeekly) && Number.isFinite(proposedWeekly) && Number.isFinite(weeklyOpportunity) ? `${money(currentWeekly)} - ${money(proposedWeekly)} = ${money(weeklyOpportunity)}` : 'Unavailable'],
-    ['Annual Opportunity = Weekly Opportunity × 48', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × ${ACTIVE_RFQ_BASELINE.annualizationWeeks} = ${money(weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks)}` : 'Unavailable'],
+    ['Annual Opportunity = Weekly Opportunity × 52', Number.isFinite(weeklyOpportunity) ? `${money(weeklyOpportunity)} × ${REPORTING_ANNUALIZATION_WEEKS} = ${money(weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS)}` : 'Unavailable'],
     ['Weekly Pallets = Weekly Cases ÷ 70', Number.isFinite(weeklyCases) ? `${num(weeklyCases)} ÷ 70 = ${num(palletsFromCases(weeklyCases))}` : 'Unavailable'],
     ['Estimated 48-ft Trailer Equivalents = Total Weekly Pallets ÷ 24', Number.isFinite(weeklyPallets) ? `${num(weeklyPallets)} ÷ 24 = ${num(weeklyPallets / ACTIVE_RFQ_BASELINE.reefer48FootPallets)}` : 'Unavailable'],
     ['Route Pallet Utilization = Route Weekly Pallets ÷ 24', 'Shown per route as route weekly pallets ÷ 24-pallet 48-ft capacity.']
@@ -438,9 +439,9 @@ function optimizationTotals(searchParams) {
   const currentWeeklyCost = ACTIVE_RFQ_BASELINE.weeklyCost;
   const proposedWeeklyCost = paramNumber(searchParams, 'proposedWeeklyCost');
   const weeklyOpportunity = proposedWeeklyCost === null ? null : currentWeeklyCost - proposedWeeklyCost;
-  const annualOpportunity = weeklyOpportunity === null ? null : weeklyOpportunity * ACTIVE_RFQ_BASELINE.annualizationWeeks;
-  const currentAnnualCost = ACTIVE_RFQ_BASELINE.annualCost;
-  const proposedAnnualCost = paramNumber(searchParams, 'proposedAnnualCost') ?? (proposedWeeklyCost === null ? null : proposedWeeklyCost * ACTIVE_RFQ_BASELINE.annualizationWeeks);
+  const annualOpportunity = weeklyOpportunity === null ? null : weeklyOpportunity * REPORTING_ANNUALIZATION_WEEKS;
+  const currentAnnualCost = currentWeeklyCost * REPORTING_ANNUALIZATION_WEEKS;
+  const proposedAnnualCost = paramNumber(searchParams, 'proposedAnnualCost') ?? (proposedWeeklyCost === null ? null : proposedWeeklyCost * REPORTING_ANNUALIZATION_WEEKS);
   return {
     available: true,
     scope: searchParams.get('scope') || 'visible-route-groups',
@@ -506,7 +507,7 @@ export async function GET(req) {
   } : {
     currentWeeklyCost: ACTIVE_RFQ_BASELINE.weeklyCost,
     proposedWeeklyCost: null,
-    currentAnnualCost: ACTIVE_RFQ_BASELINE.annualCost,
+    currentAnnualCost: ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS,
     proposedAnnualCost: null,
     weeklyOpportunity: null,
     annualOpportunity: null,
@@ -545,12 +546,12 @@ export async function GET(req) {
     <div class="summary">
       <div class="metric"><span>Active RFQ centers</span><b>${num(ACTIVE_RFQ_BASELINE.activeCenters)}</b></div>
       <div class="metric"><span>Weekly baseline cost</span><b>${money(ACTIVE_RFQ_BASELINE.weeklyCost)}</b></div>
-      <div class="metric"><span>Annual baseline cost</span><b>${money(ACTIVE_RFQ_BASELINE.annualCost)}</b></div>
+      <div class="metric"><span>52-week annualized baseline</span><b>${money(ACTIVE_RFQ_BASELINE.weeklyCost * REPORTING_ANNUALIZATION_WEEKS)}</b></div>
       <div class="metric"><span>Weekly cases</span><b>${num(ACTIVE_RFQ_BASELINE.weeklyCases)}</b></div>
       <div class="metric"><span>Weekly pallets = cases / 70</span><b>${num(baselinePallets)}</b></div>
       <div class="metric"><span>Estimated annual opportunity</span><b>${esc(report.opportunityDisplay)}</b></div>
     </div>
-    ${isOptimizationReport ? `<p class="small">Current cost baseline uses the Active RFQ Excel subtotal from AQ342. Proposed scenario totals use the Optimization Engine visible scenario summary.</p>` : ''}
+    ${isOptimizationReport ? `<p class="small">Annualized using 52-week calendar run-rate. Excel RFQ workbook may use a 4-week month / 48-week accounting convention; weekly baseline remains sourced from Active RFQ data. Proposed scenario totals use the Optimization Engine visible scenario summary.</p>` : ''}
   </section>
 
   <section>
