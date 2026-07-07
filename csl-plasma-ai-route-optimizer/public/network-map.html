@@ -3143,10 +3143,11 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       sel.dataset.codyRouteFirst = '1';
       sel.addEventListener('change', ()=>{
         if(!sel.value) return;
-        // The generic filter listener is registered before this route-first handler,
-        // so it may refresh once with stale portfolio filters. Re-focus the route
-        // immediately after the change event so the route map and workflow table
-        // are rendered with portfolio filters cleared.
+        // Conflict resolution: keep the route-first focus path here, not a
+        // refresh-only path. The generic filter listener is registered before this
+        // handler, so it may refresh once with stale portfolio filters; re-focus
+        // the route after the event so the selected map and workflow table render
+        // with portfolio filters cleared.
         window.setTimeout(()=>{
           if(activeView === 'optimization' && $('optRouteFilter')?.value === sel.value){
             setRouteFocus(sel.value);
@@ -4107,18 +4108,47 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='csl_plasma_confirmed_chargeable_route_workflow.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
   };
 
-  // Show origin marker and deadhead line on selected route maps.
+  function selectedRouteMapRecords(routeName){
+    return records.filter(r=>r.hasCoords && getRouteName(r) === routeName && String(r.centerStatus||'').toUpperCase() === 'OPEN' && !isNotServicedByMckesson(r));
+  }
+  function drawSelectedRouteOnMap(routeName){
+    if(!routeName) return null;
+    const stops=selectedRouteMapRecords(routeName);
+    if(!stops.length) return null;
+    const color=routeColor(routeName);
+    const ordered=stops.slice().sort((a,b)=>String(a.routeName||'').localeCompare(String(b.routeName||'')));
+    const endpoint=endpointPLCFor(ordered[0]);
+    const endpointCoord=plcCoords[endpoint];
+    const bounds=[];
+    if(endpointCoord){
+      plcLayer.addLayer(L.marker([endpointCoord.lat,endpointCoord.lng], {icon:plcIcon(endpoint,colorFor(endpoint)), zIndexOffset:1800}).bindPopup(`<b>${esc2(endpoint)}</b><br/>Selected route endpoint for ${esc2(routeName)}`));
+      bounds.push([endpointCoord.lat,endpointCoord.lng]);
+    }
+    ordered.forEach((stop,idx)=>{
+      centerLayer.addLayer(L.marker([stop.lat,stop.lng], {icon:L.divIcon({className:'',html:`<div class="stopNumberIcon" style="background:${color}">${idx+1}</div>`,iconSize:[26,26],iconAnchor:[13,13]}), zIndexOffset:2600}).bindPopup(`<div class="popup"><h3>${esc2(routeName)} stop ${idx+1}</h3><div class="muted">${esc2(stop.routeName)} · ${esc2(stop.city)}, ${esc2(stop.state)}</div></div>`).bindTooltip(`${routeName} · ${idx+1}. ${stop.routeName}`, {direction:'top', opacity:.9}));
+      bounds.push([stop.lat,stop.lng]);
+    });
+    const path=[...(endpointCoord ? [[endpointCoord.lat,endpointCoord.lng]] : []), ...ordered.map(s=>[s.lat,s.lng])];
+    if(path.length > 1){
+      lineLayer.addLayer(L.polyline(path, {color, weight:5, opacity:.85}).bindPopup(`<b>Selected route: ${esc2(routeName)}</b><br/>Stops shown: ${fmt0(ordered.length)}`));
+    }
+    if(bounds.length) map.fitBounds(bounds, {padding:[45,45], maxZoom:7});
+    return {stops:ordered, endpoint};
+  }
+
+  // Always show the selected route on the map, even if portfolio filters remove it from recommendation rows.
   const priorRefreshOptimization=refreshOptimization;
   refreshOptimization=function(){
     priorRefreshOptimization();
     installMckessonAssumptionUi();
     if(activeView !== 'optimization') return;
     const selected=$('optRouteFilter')?.value || '';
+    drawSelectedRouteOnMap(selected);
     const rows=lastOptimizationRows || [];
     updateOptimizationSummary(rows);
     renderPickupGroupRecommendations();
     if(!selected || !rows.length) return;
-    const r=rows[0]; const origin=originForRoute(r.route,r.stops);
+    const r=rows.find(row=>row.route === selected) || rows[0]; const origin=originForRoute(r.route,r.stops);
     if(origin){
       const icon=L.divIcon({className:'',html:`<div class="originIcon">Origin</div>`,iconSize:[54,24],iconAnchor:[27,12]});
       centerLayer.addLayer(L.marker([origin.lat,origin.lng], {icon, zIndexOffset:3000}).bindPopup(`<b>${esc2(origin.name)}</b><br>${esc2(origin.address)}<br><span class="muted">Truck origin / deadhead start. Not charged to CSL.</span>`));
