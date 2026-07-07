@@ -3132,10 +3132,18 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(sel && !sel.dataset.codyRouteFirst){
       sel.dataset.codyRouteFirst = '1';
       sel.addEventListener('change', ()=>{
-        if(sel.value){
-          window.codyOptShowAllRoutes = false;
-          if($('optHideNoSavings')) $('optHideNoSavings').checked=false;
-        }
+        if(!sel.value) return;
+        window.codyOptShowAllRoutes = false;
+        if($('optHideNoSavings')) $('optHideNoSavings').checked=false;
+        // The generic filter listener is registered before this route-first handler,
+        // so it may refresh once with stale portfolio filters and clear the map.
+        // Refresh again after this handler has relaxed the route-first filters so
+        // selecting a route immediately redraws the selected route map and table.
+        window.setTimeout(()=>{
+          if(activeView === 'optimization' && $('optRouteFilter')?.value === sel.value){
+            refreshOptimization();
+          }
+        }, 0);
       });
     }
   }
