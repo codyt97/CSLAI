@@ -2822,10 +2822,20 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
   function setRouteFocus(route){
     window.codyOptShowAllRoutes = false;
     if($('optRouteFilter')) $('optRouteFilter').value = route || '';
+    // Route drill-down should not inherit portfolio-only filters. Those filters
+    // are useful for the all-route list, but they can exclude the selected route
+    // and make the map/table look empty or unchanged.
+    if(route){
+      if($('optCurrentPlcFilter')) $('optCurrentPlcFilter').value = '';
+      if($('optRecommendedPlcFilter')) $('optRecommendedPlcFilter').value = '';
+      if($('optMinAnnualSavings')) $('optMinAnnualSavings').value = '0';
+      if($('optRelayOnly')) $('optRelayOnly').checked = false;
+    }
     if($('optHideNoSavings')) $('optHideNoSavings').checked = false;
     if($('optShowMode')) $('optShowMode').value = 'candidates';
     refreshOptimization();
   }
+  window.focusOptimizationRoute = setRouteFocus;
   function showAllRoutes(){
     window.codyOptShowAllRoutes = true;
     if($('optRouteFilter')) $('optRouteFilter').value = '';
@@ -3075,7 +3085,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       return;
     }
     if(!selected && window.codyOptShowAllRoutes){
-      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Directional estimate — mileage basis differs and requires validation'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
+      table.innerHTML = `<thead><tr><th>Route</th><th>Action</th><th>Current PLC</th><th>Proposed Route</th><th>Stops</th><th>Cases/wk</th><th>Pallets/wk</th><th>Full Scheduled Source Route Miles</th><th>Scenario Routed Miles</th><th>Mileage Delta</th><th>Weekly Savings</th><th>Annual Savings</th><th>Confidence</th></tr></thead><tbody>${rows.map(r=>`<tr class="opt-click-row" onclick="window.focusOptimizationRoute('${esc(r.route)}');"><td><b>${esc(r.route)}</b></td><td>${badge(decisionLabel(r), statusClassForPlan(r)==='warn'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc(r.currentPLCText)}</td><td>${esc(r.newRouteText)}</td><td>${fmt0(r.stopCount)}</td><td>${fmt1(r.cases)}</td><td>${fmt1(r.pallets)}</td><td>${formatFullScheduledRouteMiles(r.route, selectedScheduleWeek())}</td><td>${fmtMiles(r.newMiles)}</td><td>${'Directional estimate — mileage basis differs and requires validation'}</td><td>${fmtDelta(-r.weeklySavings,'money').replace('+','')}</td><td><b>${money2(Math.max(0,r.annualSavings))}</b></td><td>${esc(confidenceText(r))}</td></tr>`).join('')}</tbody>`;
       return;
     }
     const chunks = rows.map(r=>{
@@ -3132,10 +3142,16 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
     if(sel && !sel.dataset.codyRouteFirst){
       sel.dataset.codyRouteFirst = '1';
       sel.addEventListener('change', ()=>{
-        if(sel.value){
-          window.codyOptShowAllRoutes = false;
-          if($('optHideNoSavings')) $('optHideNoSavings').checked=false;
-        }
+        if(!sel.value) return;
+        // The generic filter listener is registered before this route-first handler,
+        // so it may refresh once with stale portfolio filters. Re-focus the route
+        // immediately after the change event so the route map and workflow table
+        // are rendered with portfolio filters cleared.
+        window.setTimeout(()=>{
+          if(activeView === 'optimization' && $('optRouteFilter')?.value === sel.value){
+            setRouteFocus(sel.value);
+          }
+        }, 0);
       });
     }
   }
@@ -4061,7 +4077,7 @@ if($('optLoadActualRoutes')) $('optLoadActualRoutes').addEventListener('click', 
       const headers=['Route','Action / Recommendation','Origin','Trailer','Current PLC','Proposed Route / PLC','Full Scheduled Source Route Miles','Scenario Routed Miles','Mileage Basis','Mileage Delta','Current Weekly Cost','Proposed Weekly Cost','Weekly Opportunity','Annual Opportunity','Weekly Cases','Weekly Pallets','Pallet Utilization'];
       table.innerHTML=`<thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>{
         const k=getRouteKpis(r); const v=validationWarningsForRoute(r.route,r.cases,r.newMiles); const origin=originForRoute(r.route,r.stops);
-        return `<tr class="opt-click-row" onclick="document.getElementById('optRouteFilter').value='${esc2(r.route)}'; window.codyOptShowAllRoutes=false; if(document.getElementById('optHideNoSavings')) document.getElementById('optHideNoSavings').checked=false; refreshOptimization();"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft · ${esc2(v.trailer.label)}</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${formatMiles(k.currentSourceMiles)}</td><td>${formatMiles(k.proposedScenarioMiles)}</td><td>${esc2(k.mileageBasisStatus)}</td><td>${formatMileageDelta(k)}</td><td>${formatMoney(k.currentWeeklyCost)}</td><td>${formatMoney(k.proposedWeeklyCost)}</td><td>${formatMoney(k.weeklyOpportunity)}</td><td><b>${formatMoney(k.annualOpportunity)}</b></td><td>${formatNumber(k.weeklyCases)}</td><td>${formatNumber(k.weeklyPallets)}</td><td>${esc2(k.palletStatus)} · ${fmt1(k.palletUtilizationPercent)}%</td></tr>`;
+        return `<tr class="opt-click-row" onclick="window.focusOptimizationRoute('${esc2(r.route)}');"><td><b>${esc2(r.route)}</b></td><td>${badge(r.recommendationType, r.recommendationType==='Split'?'badge-amber':r.weeklySavings>0?'badge-green':'badge-gray')}</td><td>${esc2(origin?origin.name:'Unknown')}</td><td>${esc2(v.trailer.size)} ft · ${esc2(v.trailer.label)}</td><td>${esc2(r.currentPLCText)}</td><td>${esc2(r.newRouteText)}</td><td>${formatMiles(k.currentSourceMiles)}</td><td>${formatMiles(k.proposedScenarioMiles)}</td><td>${esc2(k.mileageBasisStatus)}</td><td>${formatMileageDelta(k)}</td><td>${formatMoney(k.currentWeeklyCost)}</td><td>${formatMoney(k.proposedWeeklyCost)}</td><td>${formatMoney(k.weeklyOpportunity)}</td><td><b>${formatMoney(k.annualOpportunity)}</b></td><td>${formatNumber(k.weeklyCases)}</td><td>${formatNumber(k.weeklyPallets)}</td><td>${esc2(k.palletStatus)} · ${fmt1(k.palletUtilizationPercent)}%</td></tr>`;
       }).join('')}</tbody>`;
       return;
     }
