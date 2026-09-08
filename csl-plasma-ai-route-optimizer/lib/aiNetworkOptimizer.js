@@ -3,6 +3,9 @@ import rateTable from './data/rateTable.json' assert { type: 'json' };
 import { PLC_COORDS, haversineMiles } from './routeMath.js';
 import { fetchGeoapifyRoute } from './geoapify.js';
 
+const VALID_PLCS = new Set(['Dallas PLC', 'Whitestown PLC']);
+const MAX_BATCH_CENTERS = 55;
+
 const DESIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -83,8 +86,33 @@ function scopedRecords(scope, selectedRoute){
   if(scope==='relay') rows=rows.filter(r=>clean(r.routeType).toLowerCase()==='relay' || clean(r.basePLC)!==clean(r.actualPLC) || ['ALLENTOWN','BUFFALO','PHILLY'].includes(routeName(r).toUpperCase()));
   return rows;
 }
+function screenSourceRows(rows, mode){
+  const duplicateSourceIds=[];
+  const idCounts=new Map();
+  for(const r of rows){ const id=clean(r.id); idCounts.set(id,(idCounts.get(id)||0)+1); }
+  for(const [id,count] of idCounts){ if(!id || count>1) duplicateSourceIds.push(id || '(blank)'); }
+
+  const missingActualPLC=rows.filter(r=>!VALID_PLCS.has(clean(r.actualPLC)));
+  const missingCoordinates=rows.filter(r=>!Number.isFinite(Number(r.lat)) || !Number.isFinite(Number(r.lng)));
+  const excluded = mode==='fixed' ? missingActualPLC : [];
+  const excludedIds=new Set(excluded.map(r=>clean(r.id)));
+  const eligible=rows.filter(r=>!excludedIds.has(clean(r.id)));
+  return {
+    eligible,
+    diagnostics:{
+      suppliedCenters:rows.length,
+      eligibleCenters:eligible.length,
+      excludedCenters:excluded.length,
+      excludedCenterIds:excluded.map(r=>clean(r.id)),
+      missingActualPLC:missingActualPLC.length,
+      missingActualPLCIds:missingActualPLC.map(r=>clean(r.id)),
+      missingCoordinates:missingCoordinates.length,
+      missingCoordinateIds:missingCoordinates.map(r=>clean(r.id)),
+      duplicateSourceIds
+    }
+  };
+}
 function groupCurrent(rows){
-  // A calculated current-road baseline needs one destination per path, so mixed-PLC route names are split by Actual PLC.
   const m=new Map();
   for(const r of rows){
     const plc=clean(r.actualPLC);
@@ -95,6 +123,21 @@ function groupCurrent(rows){
   return [...m.entries()].map(([key,stops])=>({
     key, routeName:routeName(stops[0]), plc:clean(stops[0].actualPLC), stops:[...stops].sort((a,b)=>sourceSequence(a)-sourceSequence(b))
   }));
+}
+function buildBatches(rows){
+  const routeGroups=new Map();
+  for(const r of rows){ const key=routeName(r); if(!routeGroups.has(key)) routeGroups.set(key,[]); routeGroups.get(key).push(r); }
+  const groups=[...routeGroups.values()].sort((a,b)=>b.length-a.length);
+  const batches=[];
+  let current=[];
+  for(const group of groups){
+    if(current.length && current.length+group.length>MAX_BATCH_CENTERS){ batches.push(current); current=[]; }
+    if(group.length>MAX_BATCH_CENTERS){
+      for(let i=0;i<group.length;i+=MAX_BATCH_CENTERS) batches.push(group.slice(i,i+MAX_BATCH_CENTERS));
+    }else current.push(...group);
+  }
+  if(current.length) batches.push(current);
+  return batches;
 }
 function fallbackMiles(orderedStops, plc){
   const pts=orderedStops.filter(s=>Number.isFinite(Number(s.lat))&&Number.isFinite(Number(s.lng))).map(s=>({lat:Number(s.lat),lng:Number(s.lng)}));
@@ -131,6 +174,7 @@ async function routeMetrics(orderedStops, plc, {useActualRoadRoutes=true,tollPre
 async function validateCurrent(rows, opts){
   const groups=groupCurrent(rows); const detail=[];
   for(const g of groups){
+    if(!VALID_PLCS.has(g.plc)) continue;
     const m=await routeMetrics(g.stops,g.plc,opts);
     detail.push({ currentRouteName:g.routeName, actualPLC:g.plc, stopCount:g.stops.length, stops:g.stops.map(s=>clean(s.id)), ...m });
   }
@@ -155,6 +199,77 @@ function validateDesignCoverage(design, rows, mode){
   if(duplicate.length) errors.push(`${duplicate.length} source centers were assigned more than once.`);
   return { valid:errors.length===0, errors, missing, duplicate };
 }
+function extractResponseText(data){
+  return data.output_text || data.output?.flatMap(o=>o.content||[]).map(c=>c.text||'').join('') || '';
+}
+async function callOpenAiDesign({rows,mode,objective,question,model,repairContext=null,batchNumber=1}){
+  const centers=rows.map(sourceCenter);
+  const currentRouteSummary=groupCurrent(rows).map(g=>({ currentRouteName:g.routeName, actualPLC:g.plc, stopCount:g.stops.length, centerIds:g.stops.map(s=>clean(s.id)), officialStopOrder:g.stops.map(s=>({id:clean(s.id),sequence:sourceSequence(s)})) }));
+  const exactIds=rows.map(r=>clean(r.id));
+  const system=`You are the OpenAI network-design engine for CSL US Plasma Road RFP Scenario B (Current Network Optimization). Use only supplied workbook-derived data. Do not invent centers, volumes, schedules, PLCs, constraints, miles, costs, or operational facts. Assign EVERY ID in exactCenterIds exactly once and assign NO OTHER ID. Choose route grouping and stop sequence. ${mode==='fixed'?"KEEP EACH CENTER'S ACTUAL PLC EXACTLY UNCHANGED.":'You MAY choose Dallas PLC or Whitestown PLC as Proposal PLC.'} Preserve pickup frequency, Week A/B, pickup days, time zone, pickup hours, cases, liters and pallets. Do not calculate mileage or savings. Each route has one destination PLC and stop sequence must be 1..N without gaps or duplicates.`;
+  const payload={
+    batchNumber,
+    optimizationMode:mode==='fixed'?'PLC FIXED — no destination changes':'PLC FLEXIBLE — Proposal PLC may change',
+    objective, rfqRules:SOURCE_RULES, userQuestion:question, exactCenterIds:exactIds, exactCenterCount:exactIds.length,
+    currentRouteSummary, centers,
+    repairContext
+  };
+  const res=await fetch('https://api.openai.com/v1/responses',{
+    method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},
+    body:JSON.stringify({ model, input:[{role:'system',content:system},{role:'user',content:JSON.stringify(payload)}], text:{format:{type:'json_schema',name:'csl_route_network_design',strict:true,schema:DESIGN_SCHEMA}} })
+  });
+  const data=await res.json();
+  if(!res.ok) return {ok:false,error:`OpenAI API failed: ${data.error?.message||res.status}`};
+  const text=extractResponseText(data);
+  try{ return {ok:true,design:JSON.parse(text)}; }
+  catch{ return {ok:false,error:'OpenAI returned an unreadable network design.'}; }
+}
+function uniquifyRouteNames(routes){
+  const seen=new Map();
+  return routes.map(r=>{
+    const base=clean(r.aiRouteName)||'AI-ROUTE';
+    const count=(seen.get(base)||0)+1; seen.set(base,count);
+    return count===1?r:{...r,aiRouteName:`${base}-${count}`};
+  });
+}
+async function buildValidatedDesign(rows, mode, objective, question, model){
+  const batches=buildBatches(rows);
+  const combined=[];
+  const summaries=[];
+  const questions=[];
+  const batchDiagnostics=[];
+  let calls=0;
+  for(let i=0;i<batches.length;i++){
+    const batch=batches[i];
+    let response=await callOpenAiDesign({rows:batch,mode,objective,question,model,batchNumber:i+1}); calls++;
+    if(!response.ok) return {ok:false,error:response.error,calls,batchDiagnostics};
+    let design=response.design;
+    let coverage=validateDesignCoverage(design,batch,mode);
+    let repaired=false;
+    if(!coverage.valid){
+      const repairContext={
+        instruction:'Repair the prior proposal. Return a COMPLETE replacement design for this batch, not a patch.',
+        validationErrors:coverage.errors,
+        missingIds:coverage.missing,
+        duplicateIds:coverage.duplicate,
+        priorDesign:design
+      };
+      response=await callOpenAiDesign({rows:batch,mode,objective,question,model,repairContext,batchNumber:i+1}); calls++;
+      if(!response.ok) return {ok:false,error:response.error,calls,batchDiagnostics};
+      design=response.design;
+      coverage=validateDesignCoverage(design,batch,mode);
+      repaired=true;
+    }
+    batchDiagnostics.push({batch:i+1,centerCount:batch.length,repaired,valid:coverage.valid,errors:coverage.errors});
+    if(!coverage.valid) return {ok:false,error:`Batch ${i+1} failed backend validation after repair.`,coverage,calls,batchDiagnostics,rawDesign:design};
+    combined.push(...(design.routes||[]));
+    if(design.summary) summaries.push(design.summary);
+    questions.push(...(design.questionsForMcKesson||[]));
+  }
+  const design={summary:summaries.join(' '),confidence:'Medium',routes:uniquifyRouteNames(combined),questionsForMcKesson:uniq(questions)};
+  const finalCoverage=validateDesignCoverage(design,rows,mode);
+  return {ok:finalCoverage.valid,design,coverage:finalCoverage,calls,batchDiagnostics,batchCount:batches.length};
+}
 async function validateProposed(design, rows, opts){
   const byId=new Map(rows.map(r=>[clean(r.id),r])); const detail=[];
   for(const route of design.routes||[]){
@@ -162,7 +277,7 @@ async function validateProposed(design, rows, opts){
     const stops=stopRefs.map(s=>byId.get(clean(s.id))).filter(Boolean);
     const m=await routeMetrics(stops,clean(route.proposedPLC),opts);
     detail.push({
-      recommendationType: 'OpenAI Route Rebuild', aiRouteName:clean(route.aiRouteName), newRouteName:clean(route.aiRouteName), newPLC:clean(route.proposedPLC), routeType:clean(route.routeType),
+      recommendationType:'OpenAI Route Rebuild', aiRouteName:clean(route.aiRouteName), newRouteName:clean(route.aiRouteName), newPLC:clean(route.proposedPLC), routeType:clean(route.routeType),
       currentRoutesImpacted:uniq(stops.map(routeName)), sourceRoutes:uniq(route.sourceRoutes||[]),
       stops:stops.map((s,i)=>({id:clean(s.id),name:clean(s.routeName),centerNumber:clean(s.centerNumber),city:clean(s.city),state:clean(s.state),currentRoute:routeName(s),currentActualPLC:clean(s.actualPLC),proposedStop:i+1,weeklyCases:num(s.weeklyCases),weeklyLiters:num(s.weeklyLiters),weeklyPallets:num(s.weeklyPallets)})),
       weeklyCases:round(sum(stops.map(s=>s.weeklyCases)),2), weeklyLiters:round(sum(stops.map(s=>s.weeklyLiters)),2), weeklyPallets:round(sum(stops.map(s=>s.weeklyPallets)),2),
@@ -170,7 +285,7 @@ async function validateProposed(design, rows, opts){
       reason:clean(route.reason), risks:route.risks||[], confidence:route.confidence||design.confidence||'Medium'
     });
   }
-  return { detail, routeCount:detail.length, miles:round(sum(detail.map(x=>x.newChargeableMiles)),2), cost:round(sum(detail.map(x=>x.newCost)),2) };
+  return {detail,routeCount:detail.length,miles:round(sum(detail.map(x=>x.newChargeableMiles)),2),cost:round(sum(detail.map(x=>x.newCost)),2)};
 }
 function buildMasterDataRows(proposedRoutes, sourceRows){
   const byId=new Map(sourceRows.map(r=>[clean(r.id),r])); const rows=[];
@@ -190,37 +305,29 @@ function buildMasterDataRows(proposedRoutes, sourceRows){
 }
 
 export async function runAiRouteOptimizer(input){
-  const { scope='all', routeName:selectedRoute='', question='', objective='miles', mode='fixed', useActualRoadRoutes=true, tollPreference='allow' }=input||{};
+  const {scope='all',routeName:selectedRoute='',question='',objective='miles',mode='fixed',useActualRoadRoutes=true,tollPreference='allow'}=input||{};
   if(!['fixed','flexible'].includes(mode)) throw new Error('mode must be fixed or flexible');
-  const rows=scopedRecords(scope,selectedRoute);
-  if(!rows.length) throw new Error('No source centers match the requested scope.');
+  const suppliedRows=scopedRecords(scope,selectedRoute);
+  if(!suppliedRows.length) throw new Error('No source centers match the requested scope.');
+  const screening=screenSourceRows(suppliedRows,mode);
+  const rows=screening.eligible;
+  if(!rows.length) return {aiExecuted:false,optimizationAccepted:false,scope,mode,calculationStatus:'NOT OPTIMIZED',error:'No eligible centers remain after source-data screening.',sourceDiagnostics:screening.diagnostics};
+  if(screening.diagnostics.duplicateSourceIds.length) return {aiExecuted:false,optimizationAccepted:false,scope,mode,calculationStatus:'NOT OPTIMIZED',error:'Source data contains duplicate or blank IDs. Fix source IDs before optimization.',sourceDiagnostics:screening.diagnostics};
   if(!process.env.OPENAI_API_KEY){
-    return { aiExecuted:false, error:'OPENAI_API_KEY is not configured. No AI optimization was performed.', scope, mode, dataSource:`${SOURCE_RULES.sourceWorkbook} → ${SOURCE_RULES.sourceSheet}`, calculationStatus:'NOT OPTIMIZED' };
+    return {aiExecuted:false,error:'OPENAI_API_KEY is not configured. No AI optimization was performed.',scope,mode,dataSource:`${SOURCE_RULES.sourceWorkbook} → ${SOURCE_RULES.sourceSheet}`,calculationStatus:'NOT OPTIMIZED',sourceDiagnostics:screening.diagnostics};
   }
 
-  const centers=rows.map(sourceCenter);
-  const currentRouteSummary=groupCurrent(rows).map(g=>({ currentRouteName:g.routeName, actualPLC:g.plc, stopCount:g.stops.length, centerIds:g.stops.map(s=>clean(s.id)), officialStopOrder:g.stops.map(s=>({id:clean(s.id),sequence:sourceSequence(s)})) }));
-  const system=`You are the OpenAI network-design engine for CSL US Plasma Road RFP Scenario B (Current Network Optimization). Optimize the provided CURRENT MCKESSON NETWORK. Use only the supplied workbook-derived data. Do not invent centers, volumes, schedules, PLCs, constraints, miles, costs, or operational facts. Your job is network design only: assign every supplied center exactly once to an AI route, choose route grouping and stop sequence, and ${mode==='fixed'?'KEEP EACH CENTER\'S ACTUAL PLC EXACTLY UNCHANGED':'you MAY choose Dallas PLC or Whitestown PLC as the proposed destination for each AI route'}. Preserve CSL-controlled pickup frequency, Week A/B, pickup days, time zone, pickup hours, cases, liters and pallets. Do not calculate or claim mileage/cost savings; the backend routing calculator will validate your design. Routes must have one destination PLC. Stop sequence must be 1..N with no duplicates or gaps.`;
-  const payload={
-    optimizationMode:mode==='fixed'?'PLC FIXED — no destination changes':'PLC FLEXIBLE — Proposal PLC may change', objective,
-    rfqRules:SOURCE_RULES, userQuestion:question, currentRouteSummary, centers
-  };
   const model=process.env.OPENAI_MODEL || 'gpt-5.5';
-  const res=await fetch('https://api.openai.com/v1/responses',{
-    method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},
-    body:JSON.stringify({ model, input:[{role:'system',content:system},{role:'user',content:JSON.stringify(payload)}], text:{format:{type:'json_schema',name:'csl_route_network_design',strict:true,schema:DESIGN_SCHEMA}} })
-  });
-  const data=await res.json();
-  if(!res.ok) return { aiExecuted:false, error:`OpenAI API failed: ${data.error?.message||res.status}`, scope, mode, modelUsed:model, calculationStatus:'NOT OPTIMIZED' };
-  const text=data.output_text || data.output?.flatMap(o=>o.content||[]).map(c=>c.text||'').join('') || '';
-  let design;
-  try{ design=JSON.parse(text); }catch{ return {aiExecuted:false,error:'OpenAI returned an unreadable network design.',scope,mode,modelUsed:model,calculationStatus:'NOT OPTIMIZED'}; }
-
-  const coverage=validateDesignCoverage(design,rows,mode);
-  if(!coverage.valid){
-    return { aiExecuted:true, optimizationAccepted:false, scope, mode, modelUsed:model, dataSource:`${SOURCE_RULES.sourceWorkbook} → ${SOURCE_RULES.sourceSheet}`, calculationStatus:'OpenAI produced a proposal, but backend validation rejected it.', validationWarnings:coverage.errors, rawDesign:design };
+  const built=await buildValidatedDesign(rows,mode,objective,question,model);
+  if(!built.ok){
+    return {
+      aiExecuted:true,optimizationAccepted:false,scope,mode,modelUsed:model,dataSource:`${SOURCE_RULES.sourceWorkbook} → ${SOURCE_RULES.sourceSheet}`,
+      calculationStatus:'OpenAI produced a proposal, but backend validation rejected it.',
+      error:built.error,validationWarnings:built.coverage?.errors||[],sourceDiagnostics:screening.diagnostics,batchDiagnostics:built.batchDiagnostics||[],openAiCalls:built.calls||0,rawDesign:built.rawDesign
+    };
   }
 
+  const design=built.design;
   const opts={useActualRoadRoutes,tollPreference};
   const current=await validateCurrent(rows,opts);
   const proposed=await validateProposed(design,rows,opts);
@@ -228,13 +335,17 @@ export async function runAiRouteOptimizer(input){
   const weeklySavings=round(current.cost-proposed.cost,2);
   const recommendations=proposed.detail.map(r=>({...r,currentChargeableMiles:0,currentCost:0,weeklyMilesSaved:0,weeklySavings:0,annualSavings:0}));
   const missingCoords=uniq([...current.detail.flatMap(x=>x.missingCoordinateIds||[]),...proposed.detail.flatMap(x=>x.missingCoordinateIds||[])]);
+  const warnings=[];
+  if(screening.diagnostics.excludedCenters) warnings.push(`${screening.diagnostics.excludedCenters} center(s) excluded from fixed-PLC optimization because Actual PLC is missing/invalid: ${screening.diagnostics.excludedCenterIds.join(', ')}`);
+  if(missingCoords.length) warnings.push(`Missing coordinates for center IDs: ${missingCoords.join(', ')}`);
   return {
-    aiExecuted:true, optimizationAccepted:true, summary:design.summary, scope, mode, modelUsed:model,
+    aiExecuted:true,optimizationAccepted:true,summary:design.summary,scope,mode,modelUsed:model,
     dataSource:`${SOURCE_RULES.sourceWorkbook} → ${SOURCE_RULES.sourceSheet}; rules from Instructions; mileage validation by ${process.env.GEOAPIFY_API_KEY&&useActualRoadRoutes?'Geoapify':'fallback geodesic × 1.18'}`,
-    calculationStatus: missingCoords.length ? `AI design accepted. Mileage is incomplete for ${missingCoords.length} center(s) without coordinates.` : 'AI design accepted and backend route validation completed.',
+    calculationStatus:missingCoords.length?`AI design accepted. Mileage is incomplete for ${missingCoords.length} center(s) without coordinates.`:'AI design accepted and backend route validation completed.',
     confidence:design.confidence,
-    portfolio:{ currentCalculatedRouteCount:current.routeCount, proposedRouteCount:proposed.routeCount, currentCalculatedRoadMiles:current.miles, proposedCalculatedRoadMiles:proposed.miles, weeklyMilesSaved, currentEstimatedCost:current.cost, proposedEstimatedCost:proposed.cost, weeklySavings, annualSavings:round(weeklySavings*52,2), pricingBasis:`Rate Table dedicated transportation rate $${num(rateTable?.dedicatedTransportationRatePerMile).toFixed(2)}/mile + ${(num(rateTable?.averageFuelSurchargePctFromWorkbook)*100).toFixed(2)}% workbook fuel surcharge` },
-    recommendations, currentRouteValidation:current.detail, validationWarnings:missingCoords.length?[`Missing coordinates for center IDs: ${missingCoords.join(', ')}`]:[],
-    questionsForMcKesson:design.questionsForMcKesson||[], masterDataRows:buildMasterDataRows(proposed.detail,rows)
+    sourceDiagnostics:screening.diagnostics,batchDiagnostics:built.batchDiagnostics,openAiCalls:built.calls,batchCount:built.batchCount,
+    portfolio:{currentCalculatedRouteCount:current.routeCount,proposedRouteCount:proposed.routeCount,currentCalculatedRoadMiles:current.miles,proposedCalculatedRoadMiles:proposed.miles,weeklyMilesSaved,currentEstimatedCost:current.cost,proposedEstimatedCost:proposed.cost,weeklySavings,annualSavings:round(weeklySavings*52,2),pricingBasis:`Rate Table dedicated transportation rate $${num(rateTable?.dedicatedTransportationRatePerMile).toFixed(2)}/mile + ${(num(rateTable?.averageFuelSurchargePctFromWorkbook)*100).toFixed(2)}% workbook fuel surcharge`},
+    recommendations,currentRouteValidation:current.detail,validationWarnings:warnings,
+    questionsForMcKesson:design.questionsForMcKesson||[],masterDataRows:buildMasterDataRows(proposed.detail,rows)
   };
 }
