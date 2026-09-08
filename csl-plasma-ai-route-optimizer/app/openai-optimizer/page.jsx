@@ -13,7 +13,14 @@ function ResultPanel({ title, result, loading, mode }) {
   if (loading) return <section style={styles.panel}><h2 style={styles.h2}>{title}</h2><div style={styles.status}>OpenAI is rebuilding the network and the backend is validating the proposal…</div></section>;
   if (!result) return <section style={styles.panel}><h2 style={styles.h2}>{title}</h2><div style={styles.empty}>Run this mode to create a proposal.</div></section>;
   if (!result.aiExecuted || result.optimizationAccepted === false) {
-    return <section style={styles.panel}><h2 style={styles.h2}>{title}</h2><div style={styles.error}><b>{result.calculationStatus || 'NOT OPTIMIZED'}</b><br />{result.error || (result.validationWarnings || []).join(' ')}</div></section>;
+    const diagnostics = result.sourceDiagnostics;
+    return <section style={styles.panel}>
+      <h2 style={styles.h2}>{title}</h2>
+      <div style={styles.error}><b>{result.calculationStatus || 'NOT OPTIMIZED'}</b><br />{result.error || (result.validationWarnings || []).join(' ') || 'The optimizer did not return an accepted result.'}</div>
+      {diagnostics && <div style={styles.diagnostics}>
+        <b>Source check:</b> {diagnostics.suppliedCenters ?? '—'} supplied · {diagnostics.eligibleCenters ?? '—'} eligible · {diagnostics.excludedCenters ?? 0} excluded
+      </div>}
+    </section>;
   }
   const p = result.portfolio || {};
   return (
@@ -29,6 +36,7 @@ function ResultPanel({ title, result, loading, mode }) {
       </div>
       <div style={styles.summary}>{result.summary}</div>
       <div style={styles.source}><b>Source:</b> {result.dataSource}</div>
+      {!!result.validationWarnings?.length && <div style={styles.warning}>{result.validationWarnings.join(' ')}</div>}
       <div style={styles.routesTitle}>AI route rebuild ({(result.recommendations || []).length} routes)</div>
       <div style={styles.routeTableWrap}>
         <table style={styles.table}>
@@ -53,6 +61,26 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+async function readApiResponse(res) {
+  const text = await res.text();
+  if (!text) {
+    return { aiExecuted: false, optimizationAccepted: false, calculationStatus: 'NOT OPTIMIZED', error: `Optimizer returned an empty response (HTTP ${res.status}).` };
+  }
+  try {
+    const json = JSON.parse(text);
+    if (!res.ok && !json.error) json.error = `Optimizer request failed with HTTP ${res.status}.`;
+    return json;
+  } catch {
+    const cleaned = text.replace(/\s+/g, ' ').trim().slice(0, 500);
+    return {
+      aiExecuted: false,
+      optimizationAccepted: false,
+      calculationStatus: 'NOT OPTIMIZED',
+      error: `Optimizer backend returned a non-JSON response (HTTP ${res.status}). ${cleaned}`
+    };
+  }
+}
+
 export default function OpenAiOptimizerPage() {
   const [routes, setRoutes] = useState([]);
   const [scope, setScope] = useState('all');
@@ -70,10 +98,15 @@ export default function OpenAiOptimizerPage() {
     const setResult = mode === 'fixed' ? setFixed : setFlexible;
     setLoading(true); setResult(null);
     try {
-      const res = await fetch('/api/ai-route-optimizer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, routeName: scope === 'selected' ? routeName : '', mode, objective: 'miles', useActualRoadRoutes: true, tollPreference: 'allow' }) });
-      setResult(await res.json());
-    } catch (e) { setResult({ aiExecuted: false, calculationStatus: 'NOT OPTIMIZED', error: e.message }); }
-    finally { setLoading(false); }
+      const res = await fetch('/api/ai-route-optimizer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, routeName: scope === 'selected' ? routeName : '', mode, objective: 'miles', useActualRoadRoutes: true, tollPreference: 'allow' })
+      });
+      setResult(await readApiResponse(res));
+    } catch (e) {
+      setResult({ aiExecuted: false, optimizationAccepted: false, calculationStatus: 'NOT OPTIMIZED', error: e?.message || 'Network request failed.' });
+    } finally { setLoading(false); }
   }
 
   async function runBoth() { await Promise.all([run('fixed'), run('flexible')]); }
@@ -84,7 +117,7 @@ export default function OpenAiOptimizerPage() {
       <a href="/" style={styles.back}>← Network Map</a>
     </div>
 
-    <div style={styles.ruleBox}><b>Hard rule:</b> OpenAI designs route groups and stop sequence. It does not invent mileage or savings. Every center must be assigned exactly once, and the backend validates the proposal before it is accepted.</div>
+    <div style={styles.ruleBox}><b>Hard rule:</b> OpenAI designs route groups and stop sequence. It does not invent mileage or savings. Every eligible center must be assigned exactly once, and the backend validates the proposal before it is accepted.</div>
 
     <div style={styles.controls}>
       <label style={styles.label}>Scope<select value={scope} onChange={e => setScope(e.target.value)} style={styles.select}><option value="all">All current McKesson routes</option><option value="selected">One current route</option><option value="relay">Relay / PLC-mismatch routes</option></select></label>
@@ -107,5 +140,5 @@ const styles = {
   label:{display:'flex',flexDirection:'column',gap:6,fontSize:12,fontWeight:800}, select:{minWidth:230,padding:'10px 12px',border:'1px solid #ccd5e2',borderRadius:9,background:'#fff'},
   primaryButton:{padding:'11px 16px',border:0,borderRadius:9,background:'#0b63ce',color:'#fff',fontWeight:800,cursor:'pointer'}, darkButton:{padding:'11px 16px',border:0,borderRadius:9,background:'#0b1739',color:'#fff',fontWeight:800,cursor:'pointer'}, lightButton:{padding:'10px 16px',border:'1px solid #9eb4cf',borderRadius:9,background:'#fff',color:'#0b1739',fontWeight:800,cursor:'pointer'}, secondaryButton:{marginTop:14,padding:'9px 12px',border:'1px solid #ccd5e2',borderRadius:8,background:'#fff',fontWeight:700,cursor:'pointer'},
   compare:{maxWidth:1600,margin:'0 auto',display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(540px,1fr))',gap:18}, panel:{background:'#fff',border:'1px solid #dfe5ef',borderRadius:14,padding:18,minWidth:0}, panelHead:{display:'flex',justifyContent:'space-between',gap:12,alignItems:'flex-start'}, h2:{margin:'0 0 4px',fontSize:20}, subtle:{fontSize:12,color:'#667085'}, badgeFixed:{fontSize:11,fontWeight:800,padding:'6px 8px',borderRadius:20,background:'#e8eef8'}, badgeFlexible:{fontSize:11,fontWeight:800,padding:'6px 8px',borderRadius:20,background:'#fff2cc'},
-  metrics:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginTop:16}, metric:{background:'#f7f9fc',borderRadius:9,padding:10}, metricLabel:{fontSize:11,color:'#667085',marginBottom:5}, metricValue:{fontSize:18,fontWeight:800}, summary:{marginTop:15,lineHeight:1.45,fontSize:13}, source:{marginTop:10,fontSize:11,color:'#667085',lineHeight:1.4}, routesTitle:{marginTop:17,fontSize:13,fontWeight:800}, routeTableWrap:{overflowX:'auto',marginTop:8,maxHeight:430,overflowY:'auto',border:'1px solid #e5e9f0',borderRadius:8}, table:{width:'100%',borderCollapse:'collapse',fontSize:12}, th:{textAlign:'left',position:'sticky',top:0,background:'#eef3f8',padding:'8px',borderBottom:'1px solid #dfe5ef'}, td:{padding:'8px',borderBottom:'1px solid #eef1f5',verticalAlign:'top'}, empty:{padding:'32px 0',color:'#667085'}, status:{padding:'28px 0',color:'#0b63ce',fontWeight:700}, error:{marginTop:12,padding:12,background:'#fff0f0',border:'1px solid #ffcaca',borderRadius:8,color:'#8a1c1c',lineHeight:1.5}
+  metrics:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:9,marginTop:16}, metric:{background:'#f7f9fc',borderRadius:9,padding:10}, metricLabel:{fontSize:11,color:'#667085',marginBottom:5}, metricValue:{fontSize:18,fontWeight:800}, summary:{marginTop:15,lineHeight:1.45,fontSize:13}, source:{marginTop:10,fontSize:11,color:'#667085',lineHeight:1.4}, routesTitle:{marginTop:17,fontSize:13,fontWeight:800}, routeTableWrap:{overflowX:'auto',marginTop:8,maxHeight:430,overflowY:'auto',border:'1px solid #e5e9f0',borderRadius:8}, table:{width:'100%',borderCollapse:'collapse',fontSize:12}, th:{textAlign:'left',position:'sticky',top:0,background:'#eef3f8',padding:'8px',borderBottom:'1px solid #dfe5ef'}, td:{padding:'8px',borderBottom:'1px solid #eef1f5',verticalAlign:'top'}, empty:{padding:'32px 0',color:'#667085'}, status:{padding:'28px 0',color:'#0b63ce',fontWeight:700}, error:{marginTop:12,padding:12,background:'#fff0f0',border:'1px solid #ffcaca',borderRadius:8,color:'#8a1c1c',lineHeight:1.5}, diagnostics:{marginTop:10,padding:10,background:'#f7f9fc',borderRadius:8,fontSize:12}, warning:{marginTop:10,padding:10,background:'#fff8e1',border:'1px solid #f2df9b',borderRadius:8,fontSize:12,lineHeight:1.4}
 };
