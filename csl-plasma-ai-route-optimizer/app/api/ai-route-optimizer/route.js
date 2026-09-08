@@ -1,4 +1,4 @@
-import { runAiRouteOptimizer } from '../../../lib/aiOptimizer.js';
+import { runAiRouteOptimizer } from '../../../lib/aiNetworkOptimizer.js';
 export async function POST(req) {
   try {
     const body = await req.json();
