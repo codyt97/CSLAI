@@ -3,7 +3,6 @@ import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 const root = process.cwd();
-const truthPath = path.join(root, 'source-data', '1.truth.csv.gz.b64');
 const recordsPath = path.join(root, 'lib', 'data', 'records.json');
 const mapPath = path.join(root, 'public', 'network-map.html');
 const optimizerPath = path.join(root, 'lib', 'aiNetworkOptimizer.js');
@@ -33,9 +32,14 @@ const s = v => String(v ?? '').trim();
 const sig = r => `${s(r.address).toUpperCase()}|${s(r.zip)}`;
 
 function loadTruth() {
-  const b64 = readFileSync(truthPath, 'utf8').trim();
+  const b64 = [1, 2, 3, 4]
+    .map(i => readFileSync(path.join(root, 'source-data', `1.truth.part${i}.b64`), 'utf8').trim())
+    .join('');
+  if (b64.length !== 27356) throw new Error(`[truth-sync] Expected 27,356 base64 characters, found ${b64.length}.`);
   const csv = gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
-  return parseCsv(csv);
+  const rows = parseCsv(csv);
+  if (rows.length !== 365) throw new Error(`[truth-sync] Expected 365 truth rows from 1.xlsx, found ${rows.length}.`);
+  return rows;
 }
 
 function mergeTruth(legacyRecords, truthRows) {
@@ -108,36 +112,48 @@ const legacyRecords = JSON.parse(readFileSync(recordsPath, 'utf8'));
 const mergedRecords = mergeTruth(legacyRecords, truthRows);
 writeFileSync(recordsPath, JSON.stringify(mergedRecords));
 
-// Keep the legacy single-file map UI intact, but replace its embedded records with the same authoritative dataset.
+// The homepage is a legacy self-contained HTML map. Replace its embedded records
+// so the map, filters and KPIs use the exact same 1.xlsx truth dataset as the APIs.
 let html = readFileSync(mapPath, 'utf8');
 const marker = 'const DATA = ';
 const dataStart = html.indexOf(marker);
-if (dataStart >= 0) {
-  const lineEnd = html.indexOf('\n', dataStart);
-  if (lineEnd > dataStart) {
-    const raw = html.slice(dataStart + marker.length, lineEnd).trim().replace(/;$/, '');
-    const payload = JSON.parse(raw);
-    payload.records = mergedRecords;
-    html = `${html.slice(0, dataStart)}${marker}${JSON.stringify(payload)};${html.slice(lineEnd)}`;
-    writeFileSync(mapPath, html);
-  }
-}
+if (dataStart < 0) throw new Error('[truth-sync] Could not find embedded DATA payload in network-map.html.');
+const lineEnd = html.indexOf('\n', dataStart);
+if (lineEnd <= dataStart) throw new Error('[truth-sync] Could not determine embedded DATA payload boundary.');
+const raw = html.slice(dataStart + marker.length, lineEnd).trim().replace(/;$/, '');
+const payload = JSON.parse(raw);
+payload.records = mergedRecords;
+html = `${html.slice(0, dataStart)}${marker}${JSON.stringify(payload)};${html.slice(lineEnd)}`;
+writeFileSync(mapPath, html);
 
-// Make the optimizer metadata point to the actual source of truth.
+// Make optimizer source metadata point to the actual truth file.
 let optimizer = readFileSync(optimizerPath, 'utf8');
 optimizer = optimizer
   .replace("sourceWorkbook:'Analysis - CSL US Plasma Road RFP 2026.xlsx'", "sourceWorkbook:'1.xlsx'")
   .replace("sourceSheet:'Master Data for suppliers'", "sourceSheet:'Sheet1'");
+
+// Current/baseline miles MUST come from 1.xlsx Total Miles by week. Proposed miles
+// remain separately routed road miles. This prevents Geoapify from replacing the RFQ baseline.
+const oldValidateCurrent = "async function validateCurrent(rows,opts){const groups=groupCurrent(rows).filter(g=>VALID_PLCS.has(g.plc));const detail=await mapLimit(groups,ROUTING_CONCURRENCY,async g=>({currentRouteName:g.routeName,actualPLC:g.plc,stopCount:g.stops.length,stops:g.stops.map(s=>clean(s.id)),...(await routeMetrics(g.stops,g.plc,opts))}));return{detail,routeCount:detail.length,miles:round(sum(detail.map(x=>x.miles))),cost:round(sum(detail.map(x=>x.total)))}}";
+const newValidateCurrent = "async function validateCurrent(rows,opts){const groups=groupCurrent(rows).filter(g=>VALID_PLCS.has(g.plc));const detail=groups.map(g=>{const miles=round(sum(g.stops.map(s=>s.weeklyMiles)));return{currentRouteName:g.routeName,actualPLC:g.plc,stopCount:g.stops.length,stops:g.stops.map(s=>clean(s.id)),miles,method:'1.xlsx — Total Miles by week',missingCoordinateIds:[],...sourceRateCost(miles)}});return{detail,routeCount:detail.length,miles:round(sum(detail.map(x=>x.miles))),cost:round(sum(detail.map(x=>x.total)))}}";
+if (optimizer.includes(oldValidateCurrent)) optimizer = optimizer.replace(oldValidateCurrent, newValidateCurrent);
+else if (!optimizer.includes("method:'1.xlsx — Total Miles by week'")) throw new Error('[truth-sync] Could not patch optimizer baseline mileage logic.');
 writeFileSync(optimizerPath, optimizer);
 
-// Clarify that workbook baseline mileage and proposed routed mileage are different measures.
+// Keep the OpenAI screen explicit about the two mileage definitions and remove
+// savings-style KPI language that could be interpreted as validated savings.
 let page = readFileSync(optimizerPagePath, 'utf8');
 page = page
   .replace('Current calculated miles', 'RFQ workbook miles')
   .replace('Proposed calculated miles', 'AI proposed road miles')
   .replace('Weekly miles change', 'Raw mileage difference*')
-  .replace('Annual opportunity', 'Directional opportunity*')
-  .replace('<div style={styles.summary}>{result.summary}</div>', '<div style={styles.summary}>{result.summary}</div><div style={styles.warning}><b>*Mileage definition:</b> Current baseline values come from 1.xlsx (Total Miles by week). Proposed miles are routed road miles. Do not treat the raw difference as validated savings until the mileage definitions are reconciled.</div>');
+  .replace('Current est. cost', 'Current directional cost*')
+  .replace('Proposed est. cost', 'Proposed directional cost*')
+  .replace('Annual opportunity', 'Directional opportunity*');
+const warning = '<div style={styles.warning}><b>*Mileage definition:</b> Current baseline mileage comes directly from 1.xlsx (Total Miles by week). AI proposed mileage is calculated from the proposed road route. The difference is directional only and is not validated savings.</div>';
+if (!page.includes('*Mileage definition:')) {
+  page = page.replace('<div style={styles.summary}>{result.summary}</div>', `<div style={styles.summary}>{result.summary}</div>${warning}`);
+}
 writeFileSync(optimizerPagePath, page);
 
 const open = mergedRecords.filter(r => String(r.centerStatus).toUpperCase() === 'OPEN');
