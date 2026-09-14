@@ -1,6 +1,8 @@
 {
   "scripts": {
+    "predev": "node scripts/sync-authoritative-data.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/sync-authoritative-data.mjs",
     "build": "next build",
     "start": "next start"
   },
